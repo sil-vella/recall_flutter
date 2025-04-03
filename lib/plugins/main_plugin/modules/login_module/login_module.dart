@@ -65,6 +65,8 @@ class LoginModule extends ModuleBase {
 
     try {
       _log.info("⚡ Sending registration request...");
+      _log.info("📤 Registration data: username=$username, email=$email");
+      
       final response = await _connectionModule!.sendPostRequest(
         "/register",
         {
@@ -74,12 +76,20 @@ class LoginModule extends ModuleBase {
         },
       );
 
-      if (response?["message"] == "User registered successfully") {
-        _log.info("✅ User registered successfully.");
-        return {"success": "Registration successful. Please log in."};
-      } else {
-        return {"error": response?["error"] ?? "Failed to register user."};
+      _log.info("📥 Registration response: $response");
+
+      if (response is Map) {
+        if (response["message"] == "User registered successfully") {
+          _log.info("✅ User registered successfully.");
+          return {"success": "Registration successful. Please log in."};
+        } else if (response["error"] != null) {
+          _log.error("❌ Registration failed: ${response["error"]}");
+          return {"error": response["error"]};
+        }
       }
+
+      _log.error("❌ Unexpected response format: $response");
+      return {"error": "Unexpected server response format"};
     } catch (e) {
       _log.error("❌ Registration error: $e");
       return {"error": "Server error. Check network connection."};
@@ -107,10 +117,19 @@ class LoginModule extends ModuleBase {
 
       if (response?["message"] == "Login successful" && response?["user"]?["id"] != null) {
         final user = response!["user"];
+        final tokens = response!["tokens"];
+
+        // Store non-sensitive user data in SharedPrefs
         _sharedPref!.setString('email', email);
         _sharedPref!.setString('username', user["username"]);
         _sharedPref!.setInt('user_id', user["id"]);
         _sharedPref!.setBool('is_logged_in', true);
+
+        // Store sensitive tokens in secure storage
+        await _connectionModule!.updateAuthTokens(
+          accessToken: tokens["access_token"],
+          refreshToken: tokens["refresh_token"],
+        );
 
         return {"success": "Login Successful!"};
       } else {
@@ -118,6 +137,91 @@ class LoginModule extends ModuleBase {
       }
     } catch (e) {
       _log.error("❌ Login error: $e");
+      return {"error": "Server error. Check network connection."};
+    }
+  }
+
+  Future<Map<String, dynamic>> logoutUser(BuildContext context) async {
+    _initDependencies(context);
+
+    if (_connectionModule == null || _sharedPref == null) {
+      _log.error("❌ Missing required modules.");
+      return {"error": "Service not available."};
+    }
+
+    int? userId = _sharedPref!.getInt('user_id');
+    if (userId == null) {
+      _log.error("❌ No user ID found. Cannot logout.");
+      return {"error": "User not logged in or ID missing."};
+    }
+
+    try {
+      _log.info("⚡ Sending logout request...");
+      final response = await _connectionModule!.sendPostRequest(
+        "/logout",
+        {"user_id": userId},
+      );
+
+      if (response?.containsKey('message') == true) {
+        // Clear all stored data
+        _sharedPref!.remove('user_id');
+        _sharedPref!.remove('username');
+        _sharedPref!.remove('email');
+        _sharedPref!.remove('is_logged_in');
+        _sharedPref!.remove('access_token');
+        _sharedPref!.remove('refresh_token');
+
+        // Clear connection module tokens
+        _connectionModule!.clearAuthTokens();
+
+        return {"success": "Logged out successfully!"};
+      } else {
+        return {"error": response?["error"] ?? "Failed to logout."};
+      }
+    } catch (e) {
+      _log.error("❌ Logout error: $e");
+      return {"error": "Server error. Check network connection."};
+    }
+  }
+
+  Future<Map<String, dynamic>> refreshToken(BuildContext context) async {
+    _initDependencies(context);
+
+    if (_connectionModule == null || _sharedPref == null) {
+      _log.error("❌ Missing required modules.");
+      return {"error": "Service not available."};
+    }
+
+    String? refreshToken = _sharedPref!.getString('refresh_token');
+    if (refreshToken == null) {
+      _log.error("❌ No refresh token found.");
+      return {"error": "No refresh token available."};
+    }
+
+    try {
+      _log.info("⚡ Refreshing token...");
+      final response = await _connectionModule!.sendPostRequest(
+        "/refresh-token",
+        {"refresh_token": refreshToken},
+      );
+
+      if (response?.containsKey('access_token') == true) {
+        // Store new tokens
+        _sharedPref!.setString('access_token', response!["access_token"]);
+        _sharedPref!.setString('refresh_token', response["refresh_token"]);
+
+        // Update connection module with new tokens
+        _connectionModule!.updateAuthTokens(
+          accessToken: response["access_token"],
+          refreshToken: response["refresh_token"],
+        );
+
+        return {"success": "Token refreshed successfully!"};
+      } else {
+        return {"error": response?["error"] ?? "Failed to refresh token."};
+      }
+    } catch (e) {
+      _log.error("❌ Token refresh error: $e");
       return {"error": "Server error. Check network connection."};
     }
   }
@@ -144,10 +248,16 @@ class LoginModule extends ModuleBase {
       );
 
       if (response?.containsKey('message') == true) {
+        // Clear all stored data
         _sharedPref!.remove('user_id');
         _sharedPref!.remove('username');
         _sharedPref!.remove('email');
         _sharedPref!.remove('is_logged_in');
+        _sharedPref!.remove('access_token');
+        _sharedPref!.remove('refresh_token');
+
+        // Clear connection module tokens
+        _connectionModule!.clearAuthTokens();
 
         return {"success": "Account deleted successfully!"};
       } else {

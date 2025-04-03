@@ -1,17 +1,7 @@
-import 'package:recall/plugins/game_plugin/modules/game_play_module/game_play_module.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:recall/plugins/game_plugin/screens/activity_screen/activity_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:recall/plugins/game_plugin/modules/function_helper_module/function_helper_module.dart';
-import 'package:recall/plugins/game_plugin/modules/leaderboard_module/leaderboard_module.dart';
-import 'package:recall/plugins/game_plugin/modules/rewards_module/rewards_module.dart';
-import 'package:recall/plugins/game_plugin/modules/question_module/question_module.dart';
-import 'package:recall/plugins/game_plugin/screens/game_screen/game_screen.dart';
-import 'package:recall/plugins/game_plugin/screens/leaderboard_screen/leaderboard_screen.dart';
-import 'package:recall/plugins/game_plugin/screens/level_up_screen/level_up_screen.dart';
-import 'package:recall/plugins/game_plugin/screens/progress_screen/progress_screen.dart';
-
 import '../../core/00_base/module_base.dart';
 import '../../core/00_base/plugin_base.dart';
 import '../../core/managers/module_manager.dart';
@@ -55,10 +45,6 @@ class GamePlugin extends PluginBase {
   @override
   Map<String?, ModuleBase> createModules() {
     return {
-      null: GamePlayModule(),
-      null: QuestionModule(),
-      null: RewardsModule(),
-      null: LeaderboardModule(),
       null: FunctionHelperModule(),
     };
   }
@@ -82,41 +68,7 @@ class GamePlugin extends PluginBase {
   }
 
   void _registerNavigation() {
-    navigationManager.registerRoute(
-      path: '/game',
-      screen: (context) => const GameScreen(),
-      drawerTitle: 'Play Guess Who', // ✅ Add to drawer
-      drawerIcon: Icons.leaderboard,
-      drawerPosition: 2,
-    );
-    navigationManager.registerRoute(
-      path: '/leaderboard',
-      screen: (context) => const TimerModule(),
-      drawerTitle: 'Leaderboard', // ✅ Add to drawer
-      drawerIcon: Icons.leaderboard,
-      drawerPosition: 4,
-    );
 
-    navigationManager.registerRoute(
-      path: '/progress',
-      screen: (context) => const ProgressScreen(),
-      drawerTitle: 'My Progress', // ✅ Add to drawer
-      drawerIcon: Icons.emoji_events,
-      drawerPosition: 3,
-    );
-
-    navigationManager.registerRoute(
-      path: '/activity',
-      screen: (context) => const ActivityScreen(),
-      drawerTitle: 'Activity', // ✅ Add to drawer
-      drawerIcon: Icons.emoji_events,
-      drawerPosition: 3,
-    );
-
-    navigationManager.registerRoute(
-      path: '/level-up',
-      screen: (context) => const LevelUpScreen(),
-    );
 
   }
 

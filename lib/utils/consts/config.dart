@@ -9,7 +9,7 @@ class Config {
   // API URL
   static const String apiUrl = String.fromEnvironment(
     'API_URL_LOCAL',
-    defaultValue: 'https://default.api.url',
+    defaultValue: 'http://localhost:5000',
   );
   // Websockers url
   static const String wsUrl = String.fromEnvironment(
