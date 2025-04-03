@@ -6,6 +6,8 @@ import 'package:recall/plugins/main_plugin/modules/main_helper_module/main_helpe
 import 'package:recall/plugins/main_plugin/screens/account_screen/account_screen.dart';
 import 'package:recall/plugins/main_plugin/screens/home_screen.dart';
 import 'package:recall/plugins/main_plugin/screens/preferences_screen/preferences_screen.dart';
+import 'package:recall/plugins/main_plugin/modules/websocket_module/websocket_module.dart';
+import 'package:recall/plugins/main_plugin/modules/websocket_module/websocket_test_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/00_base/module_base.dart';
@@ -54,6 +56,7 @@ class MainPlugin extends PluginBase {
       null: MainHelperModule(),
       null: LoginModule(),
       null: AudioModule(),
+      null: WebSocketModule(),
     };
   }
 
@@ -73,7 +76,13 @@ class MainPlugin extends PluginBase {
       drawerIcon: Icons.settings, // ✅ Assign an icon
       drawerPosition: 5,
     );
-
+    navigationManager.registerRoute(
+      path: '/websocket-test',
+      screen: (context) => const WebSocketTestScreen(),
+      drawerTitle: 'WebSocket Test',
+      drawerIcon: Icons.wifi,
+      drawerPosition: 100,
+    );
   }
 
   /// ✅ Define initial states for this plugin
