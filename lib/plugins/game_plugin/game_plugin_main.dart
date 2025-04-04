@@ -12,6 +12,7 @@ import '../../core/managers/state_manager.dart';
 import '../../core/services/shared_preferences.dart';
 import '../../tools/logging/logger.dart';
 import '../main_plugin/modules/connections_api_module/connections_api_module.dart';
+import '../main_plugin/modules/websocket_module/websocket_module.dart';
 
 class GamePlugin extends PluginBase {
   late final NavigationManager navigationManager;
@@ -28,9 +29,7 @@ class GamePlugin extends PluginBase {
     final stateManager = Provider.of<StateManager>(context, listen: false);
     navigationManager = Provider.of<NavigationManager>(context, listen: false);
 
-    getCategories(context); // ✅ Fetch categories dynamically
     _initializeUserData(context); // ✅ Initialize user data
-    _registerGameTimerState(stateManager);
     _registerNavigation();
 
     // ✅ Register all game-related modules in ModuleManager
@@ -39,6 +38,14 @@ class GamePlugin extends PluginBase {
       final instanceKey = entry.key;
       final module = entry.value;
       moduleManager.registerModule(module, instanceKey: instanceKey);
+    }
+
+    // ✅ Check if WebSocketModule is available
+    final websocketModule = moduleManager.getLatestModule<WebSocketModule>();
+    if (websocketModule == null) {
+      Logger().error('❌ WebSocketModule not found in ModuleManager. Game functionality may be limited.');
+    } else {
+      Logger().info('✅ Found WebSocketModule instance. Game functionality is available.');
     }
   }
 
@@ -73,80 +80,12 @@ class GamePlugin extends PluginBase {
     navigationManager.registerRoute(
       path: '/game',
       screen: (context) => const GameScreen(),
+      drawerTitle: 'Dutch Card Game',
+      drawerIcon: Icons.sports_esports,
+      drawerPosition: 2, // Position after home screen
     );
     
-    Logger().info("✅ Game screen route registered.");
-  }
-
-
-  /// ✅ Register game timer state in StateManager
-  void _registerGameTimerState(StateManager stateManager) {
-    if (!stateManager.isPluginStateRegistered("game_timer")) {
-      stateManager.registerPluginState("game_timer", {
-        "isRunning": false,
-        "duration": 30, // Default duration
-      });
-
-      Logger().info("✅ Game timer state registered.");
-    }
-  }
-
-  /// ✅ Fetch game categories and update only if changed
-  Future<void> getCategories(BuildContext context) async {
-    final moduleManager = Provider.of<ModuleManager>(context, listen: false);
-    final servicesManager = Provider.of<ServicesManager>(context, listen: false);
-    final connectionModule = moduleManager.getLatestModule<ConnectionsApiModule>();
-    final sharedPref = servicesManager.getService<SharedPrefManager>('shared_pref');
-
-    if (connectionModule == null) {
-      Logger().error('❌ ConnectionModule not found in ModuleManager.');
-      return;
-    }
-
-    if (sharedPref == null) {
-      Logger().error('❌ SharedPreferences service not available.');
-      return;
-    }
-
-    try {
-      Logger().info('⚡ Fetching categories from /get-categories...');
-      final response = await connectionModule.sendGetRequest('/get-categories');
-
-      if (response != null && response is Map<String, dynamic> && response.containsKey("categories")) {
-        final Map<String, dynamic> categoriesMap = response["categories"];
-        List<String> fetchedCategories = categoriesMap.keys.toList();
-
-        Logger().info("✅ Fetched categories from backend: $fetchedCategories");
-
-        // ✅ Get currently stored categories
-        List<String>? storedCategories = sharedPref.getStringList('available_categories') ?? [];
-
-        // ✅ Only update if the categories have changed
-        if (storedCategories.isEmpty || !listEquals(storedCategories, fetchedCategories)) {
-          Logger().info("🔄 Categories changed, updating SharedPreferences...");
-
-          await sharedPref.setStringList('available_categories', fetchedCategories);
-
-          // ✅ Store max levels per category
-          for (String category in categoriesMap.keys) {
-            int levels = categoriesMap[category]["levels"] ?? 2;
-            await sharedPref.setInt('max_levels_$category', levels);
-            Logger().info("✅ Saved max levels for $category: $levels");
-          }
-
-          Logger().info('✅ Categories and levels updated in SharedPreferences.');
-        } else {
-          Logger().info("✅ Categories are unchanged. No update needed.");
-        }
-
-        // ✅ Ensure initialization even if categories didn't change
-        await _initializeCategorySystem(fetchedCategories, sharedPref);
-      } else {
-        Logger().error('❌ Failed to fetch categories. Unexpected response format: $response');
-      }
-    } catch (e) {
-      Logger().error('❌ Error fetching categories: $e', error: e);
-    }
+    Logger().info("✅ Game screen route registered with drawer entry.");
   }
 
 
@@ -166,16 +105,7 @@ class GamePlugin extends PluginBase {
       sharedPref.setString('email', '');
       sharedPref.setString('password', '');
     }
-
-    // ✅ Check if categories are already saved
-    List<String>? categories = sharedPref.getStringList('available_categories');
-    if (categories == null || categories.isEmpty) {
-      Logger().info("📜 Categories not found. Fetching from backend...");
-      await getCategories(context);
-    } else {
-      Logger().info("✅ Categories already initialized in SharedPreferences.");
-      await _initializeCategorySystem(categories, sharedPref);
-    }
+    
   }
 
 

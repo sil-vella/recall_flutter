@@ -59,13 +59,16 @@ class AccountScreenState extends BaseScreenState<AccountScreen> {
       logger.error('❌ SharedPreferences service not available.');
       return;
     }
+
+    // Check login status when screen loads
+    _fetchUserStatus();
   }
 
   /// Fetches user status and updates state
   Future<void> _fetchUserStatus() async {
     final userStatus = await _loginModule!.getUserStatus(context);
 
-    if (userStatus["is_logged_in"] == true) {
+    if (userStatus["status"] == "logged_in") {
       setState(() {
         _isLoggedIn = true;
         _username = userStatus["username"];
@@ -75,6 +78,9 @@ class AccountScreenState extends BaseScreenState<AccountScreen> {
     } else {
       setState(() {
         _isLoggedIn = false;
+        _username = null;
+        _email = null;
+        _user_id = null;
       });
     }
   }
