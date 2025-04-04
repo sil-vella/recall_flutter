@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:recall/plugins/game_plugin/modules/function_helper_module/function_helper_module.dart';
+import 'package:recall/plugins/game_plugin/screens/game_screen.dart';
 import '../../core/00_base/module_base.dart';
 import '../../core/00_base/plugin_base.dart';
 import '../../core/managers/module_manager.dart';
@@ -68,8 +69,13 @@ class GamePlugin extends PluginBase {
   }
 
   void _registerNavigation() {
-
-
+    // Register the game screen route
+    navigationManager.registerRoute(
+      path: '/game',
+      screen: (context) => const GameScreen(),
+    );
+    
+    Logger().info("✅ Game screen route registered.");
   }
 
 
@@ -133,7 +139,7 @@ class GamePlugin extends PluginBase {
           Logger().info("✅ Categories are unchanged. No update needed.");
         }
 
-        // ✅ Ensure initialization even if categories didn’t change
+        // ✅ Ensure initialization even if categories didn't change
         await _initializeCategorySystem(fetchedCategories, sharedPref);
       } else {
         Logger().error('❌ Failed to fetch categories. Unexpected response format: $response');
