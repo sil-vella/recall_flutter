@@ -6,10 +6,12 @@ import '../../../../core/managers/module_manager.dart';
 import '../../../../core/managers/services_manager.dart';
 import '../../../../core/services/shared_preferences.dart';
 import '../../../../tools/logging/logger.dart';
+import '../../../../core/managers/state_manager.dart';
 import 'dart:convert';
 import 'dart:async';
 import '../../../../plugins/main_plugin/modules/connections_api_module/connections_api_module.dart';
 import '../../../../utils/consts/config.dart';
+import '../../../../plugins/main_plugin/modules/login_module/login_module.dart';
 
 class WebSocketModule extends ModuleBase {
   static final Logger _log = Logger();
@@ -199,17 +201,41 @@ class WebSocketModule extends ModuleBase {
 
       // Send refresh token request
       final response = await _connectionModule!.sendPostRequest(
-        "/refresh",
+        "/auth/refresh",
         {"refresh_token": refreshToken},
       );
 
-      if (response is Map && response["tokens"] != null) {
-        final newTokens = response["tokens"];
-        await _connectionModule!.updateAuthTokens(
-          accessToken: newTokens["access_token"],
-          refreshToken: newTokens["refresh_token"],
-        );
-        return newTokens["access_token"];
+      if (response is Map) {
+        if (response["error"] != null) {
+          _log.error("❌ Token refresh failed: ${response["error"]}");
+          // If we get an unauthorized error, the session has expired
+          if (response["error"] == "Invalid refresh token" || response["error"] == "Unauthorized") {
+            _log.info("🔄 Session expired, logging out user...");
+            
+            // Let the login module handle the logout process
+            final loginModule = _moduleManager.getLatestModule<LoginModule>();
+            if (loginModule != null) {
+              await loginModule.handleSessionExpired();
+            }
+            
+            // Disconnect WebSocket after logout
+            await disconnect();
+            
+            // Notify listeners about session expiration
+            _notifyListeners("session_expired");
+            return null;
+          }
+          return null;
+        }
+
+        if (response["tokens"] != null) {
+          final newTokens = response["tokens"];
+          await _connectionModule!.updateAuthTokens(
+            accessToken: newTokens["access_token"],
+            refreshToken: newTokens["refresh_token"],
+          );
+          return newTokens["access_token"];
+        }
       }
 
       _log.error("❌ Invalid refresh token response: $response");
@@ -515,4 +541,16 @@ class WebSocketModule extends ModuleBase {
   bool get isConnected => _isConnected;
   String? get currentRoomId => _currentRoomId;
   Stream<Map<String, dynamic>> get eventStream => _eventStreamController.stream;
+
+  /// Notifies listeners about important events
+  void _notifyListeners(String event) {
+    switch (event) {
+      case "session_expired":
+        _log.info("🔄 Session expired, notifying listeners...");
+        // The WebSocket will disconnect automatically due to token refresh failure
+        break;
+      default:
+        _log.error("⚠️ Unknown event type: $event");
+    }
+  }
 } 

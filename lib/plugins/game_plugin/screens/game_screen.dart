@@ -6,6 +6,7 @@ import '../../../core/00_base/screen_base.dart';
 import '../../../plugins/main_plugin/modules/login_module/login_module.dart';
 import '../../../plugins/main_plugin/modules/websocket_module/websocket_module.dart';
 import '../../../core/managers/app_manager.dart';
+import '../../../utils/consts/theme_consts.dart';
 
 class GameScreen extends BaseScreen {
   const GameScreen({Key? key}) : super(key: key);
@@ -27,6 +28,7 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
   bool _isInitialized = false;
   bool _isLoggedIn = false;
   String? _username;
+  bool _showCreateGame = false; // Toggle between join and create game
 
   @override
   void initState() {
@@ -144,17 +146,78 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
   }
 
   Future<void> _joinGame() async {
-    if (_currentRoomId == null) return;
+    if (_roomController.text.isEmpty) return;
     
     try {
+      // First, ensure we're connected to the WebSocket server
+      if (!_isConnected) {
+        bool connected = await _websocketModule?.connect(context) ?? false;
+        if (!connected) {
+          setState(() {
+            _isConnected = false;
+            _currentRoomId = null;
+          });
+          _logController.text += "❌ Failed to connect to WebSocket server\n";
+          
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Failed to connect to WebSocket server'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          return;
+        }
+        
+        setState(() {
+          _isConnected = true;
+        });
+        _logController.text += "✅ Connected to WebSocket server\n";
+      }
+      
+      // Now that we're connected, set the room ID and join the room
+      setState(() {
+        _currentRoomId = _roomController.text;
+      });
+      
       bool joined = await _websocketModule?.joinRoom(_currentRoomId!) ?? false;
       if (joined) {
-        _logController.text += "⚡ Joining game: $_currentRoomId\n";
+        _logController.text += "✅ Successfully joined game room: $_currentRoomId\n";
       } else {
-        _logController.text += "❌ Failed to join game\n";
+        setState(() {
+          _isConnected = false;
+          _currentRoomId = null;
+        });
+        _logController.text += "❌ Failed to join game room\n";
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to join game room'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     } catch (e) {
+      setState(() {
+        _isConnected = false;
+        _currentRoomId = null;
+      });
       _logController.text += "❌ Error joining game: $e\n";
+      
+      // Show error message to user
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().contains('Room does not exist') 
+              ? 'Room does not exist' 
+              : 'Failed to join game room'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -184,9 +247,91 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
     }
   }
 
+  Future<void> _createGame() async {
+    try {
+      // First, ensure we're connected to the WebSocket server
+      if (!_isConnected) {
+        bool connected = await _websocketModule?.connect(context) ?? false;
+        if (!connected) {
+          setState(() {
+            _isConnected = false;
+          });
+          _logController.text += "❌ Failed to connect to WebSocket server\n";
+          
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Failed to connect to WebSocket server'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          return;
+        }
+        
+        setState(() {
+          _isConnected = true;
+        });
+        _logController.text += "✅ Connected to WebSocket server\n";
+      }
+      
+      // Generate a random room ID
+      final randomRoomId = DateTime.now().millisecondsSinceEpoch.toString().substring(0, 6);
+      
+      setState(() {
+        _currentRoomId = randomRoomId;
+        _roomController.text = randomRoomId;
+      });
+      
+      _logController.text += "🏠 Created new game room: $randomRoomId\n";
+      
+      // Join the room
+      bool joined = await _websocketModule?.joinRoom(randomRoomId) ?? false;
+      if (joined) {
+        _logController.text += "✅ Successfully joined game room: $randomRoomId\n";
+      } else {
+        setState(() {
+          _isConnected = false;
+          _currentRoomId = null;
+        });
+        _logController.text += "❌ Failed to join game room\n";
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to join game room'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      setState(() {
+        _isConnected = false;
+        _currentRoomId = null;
+      });
+      _logController.text += "❌ Error creating game: $e\n";
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error creating game: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   void _updateRoomId(String value) {
     setState(() {
       _currentRoomId = value;
+    });
+  }
+
+  void _toggleGameMode() {
+    setState(() {
+      _showCreateGame = !_showCreateGame;
     });
   }
 
@@ -238,33 +383,52 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
               ),
             ),
           if (!_isLoggedIn) const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _roomController,
-                  decoration: const InputDecoration(
-                    labelText: 'Game Room ID',
-                    border: OutlineInputBorder(),
-                  ),
-                  onChanged: _updateRoomId,
-                  enabled: !_isConnected && _isLoggedIn,
+          
+          // Game mode toggle
+          if (_isLoggedIn)
+            Card(
+              margin: const EdgeInsets.only(bottom: 16),
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text('Game Mode: '),
+                    const SizedBox(width: 8),
+                    SegmentedButton<bool>(
+                      segments: const [
+                        ButtonSegment<bool>(
+                          value: false,
+                          label: Text('Join Game'),
+                          icon: Icon(Icons.group_add),
+                        ),
+                        ButtonSegment<bool>(
+                          value: true,
+                          label: Text('Create Game'),
+                          icon: Icon(Icons.add_circle),
+                        ),
+                      ],
+                      selected: {_showCreateGame},
+                      onSelectionChanged: (Set<bool> newSelection) {
+                        setState(() {
+                          _showCreateGame = newSelection.first;
+                        });
+                      },
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 16),
-              ElevatedButton(
-                onPressed: _isLoggedIn ? (_currentRoomId == null ? _joinGame : _leaveGame) : null,
-                child: Text(_currentRoomId == null ? 'Join Game' : 'Leave Game'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          if (_currentRoomId != null && _isLoggedIn)
-            ElevatedButton(
-              onPressed: _startGame,
-              child: const Text('Start Game'),
             ),
+          
+          // Game components based on selected mode
+          if (_isLoggedIn)
+            _showCreateGame
+                ? _buildCreateGameComponent()
+                : _buildJoinGameComponent(),
+          
           const SizedBox(height: 16),
+          
+          // Game log
           Expanded(
             child: Container(
               padding: const EdgeInsets.all(8.0),
@@ -286,6 +450,109 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+  
+  Widget _buildJoinGameComponent() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Join Existing Game',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _roomController,
+              decoration: const InputDecoration(
+                labelText: 'Game Room ID',
+                border: OutlineInputBorder(),
+                hintText: 'Enter the room ID to join',
+              ),
+              onChanged: _updateRoomId,
+              enabled: !_isConnected,
+            ),
+            const SizedBox(height: 16),
+            Center(
+              child: ElevatedButton(
+                onPressed: _isConnected ? null : () async {
+                  if (_roomController.text.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Please enter a room ID')),
+                    );
+                    return;
+                  }
+                  await _joinGame();
+                },
+                child: Text(_isConnected ? 'Connected' : 'Join Game'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  Widget _buildCreateGameComponent() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Create New Game',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Create a new game room and invite friends to join.',
+              style: TextStyle(color: Colors.grey),
+            ),
+            const SizedBox(height: 24),
+            Center(
+              child: ElevatedButton.icon(
+                onPressed: _createGame,
+                icon: const Icon(Icons.add_circle),
+                label: const Text('Create Game Room'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                ),
+              ),
+            ),
+            if (_currentRoomId != null) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.green.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Game Room Created!',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    Text('Room ID: $_currentRoomId'),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Share this ID with friends to join your game.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

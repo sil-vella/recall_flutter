@@ -6,6 +6,7 @@ import '../../../../core/managers/module_manager.dart';
 import '../../../../core/managers/services_manager.dart';
 import '../../../../core/services/shared_preferences.dart';
 import '../../../../tools/logging/logger.dart';
+import '../../../../core/managers/state_manager.dart';
 
 class LoginModule extends ModuleBase {
   static final Logger _log = Logger(); // ✅ Static logger for logging
@@ -14,6 +15,7 @@ class LoginModule extends ModuleBase {
   late ServicesManager _servicesManager;
   SharedPrefManager? _sharedPref;
   ConnectionsApiModule? _connectionModule;
+  BuildContext? _currentContext;
 
   /// ✅ Constructor - Initializes the module
   LoginModule() : super("login_module") {
@@ -26,6 +28,7 @@ class LoginModule extends ModuleBase {
     _servicesManager = Provider.of<ServicesManager>(context, listen: false);
     _sharedPref = _servicesManager.getService<SharedPrefManager>('shared_pref');
     _connectionModule = _moduleManager.getLatestModule<ConnectionsApiModule>();
+    _currentContext = context;
   }
 
   Future<Map<String, dynamic>> getUserStatus(BuildContext context) async {
@@ -266,6 +269,39 @@ class LoginModule extends ModuleBase {
     } catch (e) {
       _log.error("❌ Error deleting user: $e");
       return {"error": "Server error. Check network connection."};
+    }
+  }
+
+  /// Handles session expiration by logging out the user and updating state
+  Future<void> handleSessionExpired() async {
+    _log.info("🔄 Handling session expiration...");
+
+    try {
+      // 1. Call the logout endpoint
+      await _connectionModule?.sendPostRequest("/logout", {"user_id": "current"});
+      
+      // 2. Clear local auth state
+      await _connectionModule?.clearAuthTokens();
+      
+      // 3. Clear shared preferences
+      await _sharedPref?.remove('user_id');
+      await _sharedPref?.remove('username');
+      await _sharedPref?.remove('email');
+      await _sharedPref?.remove('is_logged_in');
+      
+      // 4. Update app state to reflect logged out status
+      if (_currentContext != null) {
+        final stateManager = Provider.of<StateManager>(_currentContext!, listen: false);
+        stateManager.updateMainAppState('auth_status', 'logged_out');
+        stateManager.updateMainAppState('user', null);
+        
+        // 5. Navigate to login screen
+        Navigator.of(_currentContext!).pushNamedAndRemoveUntil('/login', (route) => false);
+      }
+      
+      _log.info("✅ Session expiration handled successfully");
+    } catch (e) {
+      _log.error("❌ Error handling session expiration: $e");
     }
   }
 }

@@ -163,4 +163,11 @@ class ConnectionsApiModule extends ModuleBase {
       _log.info("✅ /test request successful: $result");
     }
   }
+
+  /// Logs out the user by clearing all tokens and user data
+  Future<void> logout() async {
+    _log.info("🔄 Logging out user...");
+    await clearAuthTokens();
+    _log.info("✅ User logged out successfully");
+  }
 }
