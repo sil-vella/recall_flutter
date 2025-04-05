@@ -91,6 +91,8 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
     if (_websocketModule == null) return;
     
     _websocketModule?.eventStream.listen((event) {
+      if (!mounted) return;  // Don't process events if widget is disposed
+      
       switch (event['type']) {
         case 'room_joined':
           setState(() {
@@ -108,9 +110,11 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
           _logController.text += "🏠 Room state updated: ${event['data']['current_size']}/${event['data']['max_size']} players\n";
           break;
         case 'error':
-          setState(() {
-            _isConnected = false;
-          });
+          if (mounted) {  // Check mounted before setState
+            setState(() {
+              _isConnected = false;
+            });
+          }
           _logController.text += "❌ Error: ${event['data']['message']}\n";
           break;
       }
@@ -185,26 +189,32 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
       if (joined) {
         _logController.text += "✅ Successfully joined game room: $_currentRoomId\n";
       } else {
-        setState(() {
-          _isConnected = false;
-          _currentRoomId = null;
-        });
+        // Reset connection state and room ID on failure
+        if (mounted) {
+          setState(() {
+            _isConnected = false;
+            _currentRoomId = null;
+          });
+        }
         _logController.text += "❌ Failed to join game room\n";
         
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Failed to join game room'),
+              content: Text('Room does not exist'),
               backgroundColor: Colors.red,
             ),
           );
         }
       }
     } catch (e) {
-      setState(() {
-        _isConnected = false;
-        _currentRoomId = null;
-      });
+      // Reset connection state and room ID on error
+      if (mounted) {
+        setState(() {
+          _isConnected = false;
+          _currentRoomId = null;
+        });
+      }
       _logController.text += "❌ Error joining game: $e\n";
       
       // Show error message to user
