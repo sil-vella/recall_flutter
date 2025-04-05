@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:recall/plugins/game_plugin/modules/function_helper_module/function_helper_module.dart';
-import 'package:recall/plugins/game_plugin/screens/game_screen.dart';
+import 'package:recall/plugins/game_plugin/screens/game_screen/index.dart';
 import '../../core/00_base/module_base.dart';
 import '../../core/00_base/plugin_base.dart';
 import '../../core/managers/module_manager.dart';

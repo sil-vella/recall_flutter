@@ -29,6 +29,7 @@ class WebSocketModule extends ModuleBase {
   Timer? _tokenRefreshTimer;
   BuildContext? _currentContext;
   final _eventStreamController = StreamController<Map<String, dynamic>>.broadcast();
+  bool _mounted = true;
 
   WebSocketModule() : super("websocket_module") {
     _log.info('✅ WebSocketModule initialized.');
@@ -404,32 +405,34 @@ class WebSocketModule extends ModuleBase {
   }
 
   Future<bool> joinRoom(String roomId) async {
-    if (!_isConnected || _socket == null) {
-      _log.error("❌ Cannot join room: WebSocket not connected");
-      _log.error("📊 Current state:");
-      _log.error("   - isConnected: $_isConnected");
-      _log.error("   - socket: ${_socket != null ? 'Present' : 'None'}");
+    if (!_isConnected) {
+      _log.error('Cannot join room: WebSocket not connected');
       return false;
     }
 
     try {
-      _log.info("⚡ Joining room: $roomId");
-      _log.info("📊 Current state:");
-      _log.info("   - isConnected: $_isConnected");
-      _log.info("   - currentRoomId: $_currentRoomId");
-      _log.info("   - currentToken: ${_currentToken != null ? 'Present' : 'None'}");
-      
-      _socket!.emit('join', {
-        'room_id': roomId
-      });
-      _currentRoomId = roomId;
+      _log.info('Joining room: $roomId');
+      _socket?.emit('join', {'room_id': roomId});
       return true;
     } catch (e) {
-      _log.error("❌ Error joining room: $e");
-      _log.error("📊 Error details:");
-      _log.error("   - error type: ${e.runtimeType}");
-      _log.error("   - error message: $e");
-      _currentRoomId = null;
+      _log.error('Error joining room: $e');
+      return false;
+    }
+  }
+
+  /// Creates a new room
+  Future<bool> createRoom(String userId) async {
+    if (!_isConnected) {
+      _log.error('Cannot create room: WebSocket is not connected');
+      return false;
+    }
+
+    try {
+      _log.info('Creating new room with user ID: $userId');
+      _socket?.emit('create_room', {'user_id': userId});
+      return true;
+    } catch (e) {
+      _log.error('Error creating room: $e');
       return false;
     }
   }
@@ -540,6 +543,8 @@ class WebSocketModule extends ModuleBase {
 
   bool get isConnected => _isConnected;
   String? get currentRoomId => _currentRoomId;
+  String? get currentToken => _currentToken;
+  bool get mounted => _mounted;
   Stream<Map<String, dynamic>> get eventStream => _eventStreamController.stream;
 
   /// Notifies listeners about important events
@@ -552,5 +557,105 @@ class WebSocketModule extends ModuleBase {
       default:
         _log.error("⚠️ Unknown event type: $event");
     }
+  }
+
+  void _setupWebSocketListeners(BuildContext context) {
+    if (_socket == null) return;
+    
+    _socket!.on('room_joined', (data) {
+      if (!mounted) return;  // Don't process events if widget is disposed
+      
+      if (data['success'] == false) {
+        _log.error("❌ Failed to join room: ${data['error']}");
+        _log.error("📊 Current state:");
+        _log.error("   - currentRoomId: $_currentRoomId");
+        _log.error("   - isConnected: $_isConnected");
+        _currentRoomId = null;
+        _eventStreamController.add({
+          'type': 'error',
+          'data': {'message': 'Failed to join room: ${data['error']}'}
+        });
+      } else {
+        _log.info("✅ Successfully joined room");
+        _log.info("📊 Room details:");
+        _log.info("   - room_id: ${data['room_id']}");
+        _log.info("   - message: ${data['message']}");
+        _eventStreamController.add({
+          'type': 'room_joined',
+          'data': data
+        });
+      }
+    });
+
+    _socket!.on('room_created', (data) {
+      if (!mounted) return;  // Don't process events if widget is disposed
+      
+      _log.info("✅ Successfully created game room");
+      _eventStreamController.add({
+        'type': 'room_created',
+        'data': data
+      });
+    });
+
+    _socket!.on('user_joined', (data) {
+      if (!mounted) return;  // Don't process events if widget is disposed
+      
+      _log.info("👤 User joined:");
+      _log.info("   - user_id: ${data['user_id']}");
+      _log.info("   - username: ${data['username']}");
+      _log.info("   - roles: ${data['roles']}");
+      _log.info("   - current_size: ${data['current_size']}");
+      _log.info("   - max_size: ${data['max_size']}");
+      _eventStreamController.add({
+        'type': 'user_joined',
+        'data': data
+      });
+    });
+
+    _socket!.on('user_left', (data) {
+      if (!mounted) return;  // Don't process events if widget is disposed
+      
+      _log.info("👋 User left:");
+      _log.info("   - user_id: ${data['user_id']}");
+      _log.info("   - username: ${data['username']}");
+      _eventStreamController.add({
+        'type': 'user_left',
+        'data': data
+      });
+    });
+
+    _socket!.on('room_state', (data) {
+      if (!mounted) return;  // Don't process events if widget is disposed
+      
+      _log.info("🏠 Room state updated:");
+      _log.info("   - room_id: ${data['room_id']}");
+      _log.info("   - current_size: ${data['current_size']}");
+      _log.info("   - max_size: ${data['max_size']}");
+      _eventStreamController.add({
+        'type': 'room_state',
+        'data': data
+      });
+    });
+
+    _socket!.on('error', (data) {
+      if (!mounted) return;  // Don't process events if widget is disposed
+      
+      _log.error("❌ WebSocket error:");
+      _log.error("   - message: ${data['message']}");
+      _log.error("   - type: ${data['type']}");
+      _log.error("   - timestamp: ${DateTime.now().toIso8601String()}");
+      _eventStreamController.add({
+        'type': 'error',
+        'data': data
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _mounted = false;
+    _socket?.disconnect();
+    _eventStreamController.close();
+    super.dispose();
   }
 } 
