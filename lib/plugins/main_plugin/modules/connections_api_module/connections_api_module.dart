@@ -170,4 +170,27 @@ class ConnectionsApiModule extends ModuleBase {
     await clearAuthTokens();
     _log.info("✅ User logged out successfully");
   }
+
+  /// ✅ Refresh access token using refresh token
+  Future<String?> refreshAccessToken(String refreshToken) async {
+    try {
+      final response = await sendPostRequest('/auth/refresh', {
+        'refresh_token': refreshToken
+      });
+      
+      if (response is Map && response.containsKey('access_token')) {
+        await updateAuthTokens(
+          accessToken: response['access_token'],
+          refreshToken: response['refresh_token'] ?? refreshToken
+        );
+        return response['access_token'];
+      }
+      
+      _log.error('❌ Failed to refresh token: Invalid response format');
+      return null;
+    } catch (e) {
+      _log.error('❌ Failed to refresh token: $e');
+      return null;
+    }
+  }
 }
