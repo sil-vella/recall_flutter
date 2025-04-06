@@ -4,9 +4,11 @@ import '../../../../../core/managers/module_manager.dart';
 import '../../../../../core/managers/services_manager.dart';
 import '../../../../../tools/logging/logger.dart';
 import '../../../../../core/00_base/screen_base.dart';
+import '../../../../../core/managers/navigation_manager.dart';
 import '../../../main_plugin/modules/websocket_module/websocket_module.dart';
 import '../../../main_plugin/modules/login_module/login_module.dart';
 import 'components/components.dart';
+import 'package:go_router/go_router.dart';
 
 class GameScreen extends BaseScreen {
   const GameScreen({Key? key}) : super(key: key);
@@ -64,6 +66,11 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
         _log.error("❌ User is not logged in");
         _logController.text += "❌ Error: User is not logged in\n";
         _scrollToBottom();
+        // Navigate to account screen using GoRouter
+        if (mounted) {
+          _log.info("🔀 Navigating to account screen due to token expiration");
+          context.go('/account');
+        }
         return;
       }
 
@@ -142,50 +149,43 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
         if (userStatus["status"] != "logged_in") {
           _logController.text += "❌ User is not logged in. Please log in again.\n";
           _scrollToBottom();
-          
-          // Navigate to account screen with message
+          // Navigate to account screen using GoRouter
           if (mounted) {
-            _log.info("🔀 Navigating to account screen - user not logged in");
-            Navigator.of(context).pushReplacementNamed('/account', arguments: {
-              'message': 'Please log in to continue.',
-              'messageType': 'error'
-            });
+            _log.info("🔀 Navigating to account screen due to token expiration");
+            context.go('/account');
           }
           return;
         }
       }
       
-      bool connected = await _websocketModule?.connect(context) ?? false;
-      if (!connected) {
+      final result = await _websocketModule?.connect(context);
+      if (result == null || !result.success) {
         setState(() {
           _isConnected = false;
           _currentRoomId = null;
         });
-        _logController.text += "❌ Failed to connect to WebSocket server\n";
+        _logController.text += "❌ Failed to connect to WebSocket server: ${result?.errorMessage ?? 'Unknown error'}\n";
         
-        // Check if the failure was due to token expiration
-        if (_loginModule != null) {
-          final userStatus = await _loginModule!.getUserStatus(context);
-          if (userStatus["status"] != "logged_in") {
-            _logController.text += "❌ Session expired. Please log in again.\n";
-            _scrollToBottom();
-            
-            // Navigate to account screen with message
-            if (mounted) {
-              _log.info("🔀 Navigating to account screen due to token expiration");
-              Navigator.of(context).pushReplacementNamed('/account', arguments: {
-                'message': 'Your session has expired. Please log in again.',
-                'messageType': 'error'
-              });
-            }
-            return;
+        // Handle token expiration
+        if (result?.errorId == WebSocketError.noValidToken && _loginModule != null) {
+          _logController.text += "❌ Session expired. Please log in again.\n";
+          _scrollToBottom();
+          
+          // Logout user
+          await _loginModule!.logoutUser(context);
+          
+          // Navigate to account screen using GoRouter
+          if (mounted) {
+            _log.info("🔀 Navigating to account screen due to token expiration");
+            context.go('/account');
           }
+          return;
         }
         
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Failed to connect to WebSocket server'),
+            SnackBar(
+              content: Text('Failed to connect to WebSocket server: ${result?.errorMessage ?? 'Unknown error'}'),
               backgroundColor: Colors.red,
             ),
           );

@@ -17,6 +17,38 @@ import 'components/session_manager.dart';
 import 'components/token_manager.dart';
 import 'components/event_handler.dart';
 
+enum WebSocketError {
+  noConnectionModule,
+  noValidToken,
+  connectionFailed,
+  unknownError
+}
+
+class WebSocketResult {
+  final bool success;
+  final WebSocketError? errorId;
+  final String? errorMessage;
+
+  WebSocketResult({
+    required this.success, 
+    this.errorId,
+    this.errorMessage
+  });
+
+  static String getErrorMessage(WebSocketError error) {
+    switch (error) {
+      case WebSocketError.noConnectionModule:
+        return "Connection module not available";
+      case WebSocketError.noValidToken:
+        return "Authentication token expired or invalid";
+      case WebSocketError.connectionFailed:
+        return "Failed to establish WebSocket connection";
+      case WebSocketError.unknownError:
+        return "An unknown error occurred";
+    }
+  }
+}
+
 class WebSocketModule extends ModuleBase {
   static final Logger _log = Logger();
   late ModuleManager _moduleManager;
@@ -61,12 +93,16 @@ class WebSocketModule extends ModuleBase {
     _eventHandler.setupEventHandlers();
   }
 
-  Future<bool> connect(BuildContext context, {String? roomId}) async {
+  Future<WebSocketResult> connect(BuildContext context, {String? roomId}) async {
     _initDependencies(context);
 
     if (_connectionModule == null) {
       _log.error("❌ ConnectionsApiModule not available.");
-      return false;
+      return WebSocketResult(
+        success: false, 
+        errorId: WebSocketError.noConnectionModule,
+        errorMessage: WebSocketResult.getErrorMessage(WebSocketError.noConnectionModule)
+      );
     }
 
     // Get fresh token
@@ -74,7 +110,11 @@ class WebSocketModule extends ModuleBase {
     String? accessToken = await _tokenManager.getValidToken();
     if (accessToken == null) {
       _log.error("❌ No valid access token available.");
-      return false;
+      return WebSocketResult(
+        success: false, 
+        errorId: WebSocketError.noValidToken,
+        errorMessage: WebSocketResult.getErrorMessage(WebSocketError.noValidToken)
+      );
     }
     _log.info("✅ Got valid token for WebSocket connection");
 
@@ -82,7 +122,11 @@ class WebSocketModule extends ModuleBase {
       // Connect to WebSocket server
       final success = await _socketManager.connect(accessToken);
       if (!success) {
-        return false;
+        return WebSocketResult(
+          success: false, 
+          errorId: WebSocketError.connectionFailed,
+          errorMessage: WebSocketResult.getErrorMessage(WebSocketError.connectionFailed)
+        );
       }
 
       // Join room if specified
@@ -93,11 +137,15 @@ class WebSocketModule extends ModuleBase {
       // Start token refresh timer
       _tokenManager.startTokenRefreshTimer();
       
-      return true;
+      return WebSocketResult(success: true);
     } catch (e) {
       _log.error("❌ WebSocket connection error: $e");
       await disconnect();
-      return false;
+      return WebSocketResult(
+        success: false, 
+        errorId: WebSocketError.unknownError,
+        errorMessage: "WebSocket connection error: $e"
+      );
     }
   }
 
