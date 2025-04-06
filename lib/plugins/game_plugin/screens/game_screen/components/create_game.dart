@@ -4,7 +4,7 @@ import '../../../../../tools/logging/logger.dart';
 class CreateGame extends StatelessWidget {
   static final Logger _log = Logger();
   
-  final Function(String userId) onCreateGame;
+  final Function() onCreateGame;
   final bool isConnected;
   final String? currentRoomId;
   final String? userId;
@@ -40,7 +40,7 @@ class CreateGame extends StatelessWidget {
             const SizedBox(height: 16),
             ElevatedButton.icon(
               onPressed: isConnected && currentRoomId == null && userId != null 
-                  ? () => onCreateGame(userId!) 
+                  ? onCreateGame
                   : null,
               icon: const Icon(Icons.add_circle_outline),
               label: const Text('Create New Game'),

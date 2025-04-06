@@ -5,7 +5,7 @@ import '../../../../../../plugins/main_plugin/modules/connections_api_module/con
 
 class TokenManager {
   static final Logger _log = Logger();
-  final ConnectionsApiModule _connectionModule;
+  final ConnectionsApiModule? _connectionModule;
   String? _currentToken;
   Timer? _tokenRefreshTimer;
 
@@ -15,8 +15,13 @@ class TokenManager {
 
   Future<String?> getValidToken() async {
     try {
+      if (_connectionModule == null) {
+        _log.error("❌ ConnectionsApiModule not available");
+        return null;
+      }
+      
       // Get token from secure storage
-      String? token = await _connectionModule.getAccessToken();
+      String? token = await _connectionModule!.getAccessToken();
       if (token == null) {
         _log.error("❌ No access token found in secure storage");
         return null;
@@ -63,14 +68,14 @@ class TokenManager {
   Future<String?> _refreshToken() async {
     try {
       // Get refresh token from secure storage
-      String? refreshToken = await _connectionModule.getRefreshToken();
+      String? refreshToken = await _connectionModule!.getRefreshToken();
       if (refreshToken == null) {
         _log.error("❌ No refresh token available");
         return null;
       }
 
       // Try to refresh the token
-      final response = await _connectionModule.refreshAccessToken(refreshToken);
+      final response = await _connectionModule!.refreshAccessToken(refreshToken);
       if (response == null) {
         _log.error("❌ Failed to refresh token");
         return null;

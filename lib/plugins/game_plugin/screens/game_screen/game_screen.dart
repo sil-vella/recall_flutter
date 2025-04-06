@@ -5,6 +5,7 @@ import '../../../../../core/managers/services_manager.dart';
 import '../../../../../tools/logging/logger.dart';
 import '../../../../../core/00_base/screen_base.dart';
 import '../../../main_plugin/modules/websocket_module/websocket_module.dart';
+import '../../../main_plugin/modules/login_module/login_module.dart';
 import 'components/components.dart';
 
 class GameScreen extends BaseScreen {
@@ -22,6 +23,7 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
   late ModuleManager _moduleManager;
   late ServicesManager _servicesManager;
   WebSocketModule? _websocketModule;
+  LoginModule? _loginModule;
   
   final TextEditingController _roomController = TextEditingController();
   final TextEditingController _logController = TextEditingController();
@@ -44,18 +46,42 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
     _moduleManager = Provider.of<ModuleManager>(context, listen: false);
     _servicesManager = Provider.of<ServicesManager>(context, listen: false);
     _websocketModule = _moduleManager.getLatestModule<WebSocketModule>();
+    _loginModule = _moduleManager.getLatestModule<LoginModule>();
   }
 
   Future<void> _getUserId() async {
     try {
-      // For now, use a hardcoded user ID for testing
-      // In a real app, this would come from the user service
+      if (_loginModule == null) {
+        _log.error("❌ LoginModule not available");
+        _logController.text += "❌ Error: Login module not available\n";
+        _scrollToBottom();
+        return;
+      }
+
+      final userStatus = await _loginModule!.getUserStatus(context);
+      
+      if (userStatus["status"] != "logged_in") {
+        _log.error("❌ User is not logged in");
+        _logController.text += "❌ Error: User is not logged in\n";
+        _scrollToBottom();
+        return;
+      }
+
+      final userId = userStatus["user_id"];
+      if (userId == null) {
+        _log.error("❌ User ID not found");
+        _logController.text += "❌ Error: User ID not found\n";
+        _scrollToBottom();
+        return;
+      }
+
       setState(() {
-        _userId = 'user_${DateTime.now().millisecondsSinceEpoch}';
+        _userId = userId.toString();
       });
-      _logController.text += "✅ User ID generated: $_userId\n";
+      _logController.text += "✅ User ID retrieved: $_userId\n";
       _scrollToBottom();
     } catch (e) {
+      _log.error("❌ Error getting user ID: $e");
       _logController.text += "❌ Error getting user ID: $e\n";
       _scrollToBottom();
     }
@@ -110,6 +136,25 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
       _logController.text += "⏳ Connecting to WebSocket server...\n";
       _scrollToBottom();
       
+      // Check if user is logged in before attempting to connect
+      if (_loginModule != null) {
+        final userStatus = await _loginModule!.getUserStatus(context);
+        if (userStatus["status"] != "logged_in") {
+          _logController.text += "❌ User is not logged in. Please log in again.\n";
+          _scrollToBottom();
+          
+          // Navigate to account screen with message
+          if (mounted) {
+            _log.info("🔀 Navigating to account screen - user not logged in");
+            Navigator.of(context).pushReplacementNamed('/account', arguments: {
+              'message': 'Please log in to continue.',
+              'messageType': 'error'
+            });
+          }
+          return;
+        }
+      }
+      
       bool connected = await _websocketModule?.connect(context) ?? false;
       if (!connected) {
         setState(() {
@@ -117,6 +162,25 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
           _currentRoomId = null;
         });
         _logController.text += "❌ Failed to connect to WebSocket server\n";
+        
+        // Check if the failure was due to token expiration
+        if (_loginModule != null) {
+          final userStatus = await _loginModule!.getUserStatus(context);
+          if (userStatus["status"] != "logged_in") {
+            _logController.text += "❌ Session expired. Please log in again.\n";
+            _scrollToBottom();
+            
+            // Navigate to account screen with message
+            if (mounted) {
+              _log.info("🔀 Navigating to account screen due to token expiration");
+              Navigator.of(context).pushReplacementNamed('/account', arguments: {
+                'message': 'Your session has expired. Please log in again.',
+                'messageType': 'error'
+              });
+            }
+            return;
+          }
+        }
         
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -174,41 +238,29 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
     }
   }
 
-  Future<void> _createNewGame(String userId) async {
+  Future<void> _createRoom() async {
+    if (_userId == null) {
+      _logController.text += "❌ Cannot create room: User ID not available\n";
+      _scrollToBottom();
+      return;
+    }
+
     try {
-      // Create a new room with the user ID (backend will generate the room ID)
-      bool created = await _websocketModule?.createRoom(userId) ?? false;
-      if (!created) {
-        _logController.text += "❌ Failed to create game room\n";
-        
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Failed to create game room'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
+      _logController.text += "⏳ Creating new room...\n";
+      _scrollToBottom();
+      
+      bool success = await _websocketModule?.createRoom(_userId!) ?? false;
+      if (!success) {
+        _logController.text += "❌ Failed to create room\n";
+        _scrollToBottom();
         return;
       }
       
-      // The room ID will be set when we receive the 'room_created' event
-      _logController.text += "⏳ Waiting for room creation...\n";
+      _logController.text += "✅ Room creation request sent\n";
       _scrollToBottom();
-      
     } catch (e) {
-      _logController.text += "❌ Error creating game: $e\n";
+      _logController.text += "❌ Error creating room: $e\n";
       _scrollToBottom();
-      
-      // Show error message to user
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to create game room: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
     }
   }
 
@@ -284,7 +336,7 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
                 children: [
                   Expanded(
                     child: CreateGame(
-                      onCreateGame: _createNewGame,
+                      onCreateGame: _createRoom,
                       isConnected: _isConnected,
                       currentRoomId: _currentRoomId,
                       userId: _userId,

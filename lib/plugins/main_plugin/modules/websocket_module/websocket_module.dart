@@ -35,6 +35,13 @@ class WebSocketModule extends ModuleBase {
 
   WebSocketModule() : super("websocket_module") {
     _log.info('✅ WebSocketModule initialized.');
+    
+    // Initialize components with default values
+    _socketManager = SocketConnectionManager(_setupEventHandlers);
+    _roomManager = RoomManager(_socketManager.socket);
+    _sessionManager = SessionManager();
+    _tokenManager = TokenManager(null); // Will be updated in _initDependencies
+    _eventHandler = EventHandler();
   }
 
   void _initDependencies(BuildContext context) {
@@ -44,12 +51,8 @@ class WebSocketModule extends ModuleBase {
     _connectionModule = _moduleManager.getLatestModule<ConnectionsApiModule>();
     _currentContext = context;
 
-    // Initialize components
-    _tokenManager = TokenManager(_connectionModule!);
-    _socketManager = SocketConnectionManager(_setupEventHandlers);
-    _roomManager = RoomManager(_socketManager.socket);
-    _sessionManager = SessionManager();
-    _eventHandler = EventHandler();
+    // Update TokenManager with the connection module
+    _tokenManager = TokenManager(_connectionModule);
   }
 
   void _setupEventHandlers(IO.Socket socket) {
