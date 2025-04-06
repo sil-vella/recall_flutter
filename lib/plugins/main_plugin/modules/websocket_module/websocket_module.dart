@@ -16,38 +16,9 @@ import 'components/room_manager.dart';
 import 'components/session_manager.dart';
 import 'components/token_manager.dart';
 import 'components/event_handler.dart';
-
-enum WebSocketError {
-  noConnectionModule,
-  noValidToken,
-  connectionFailed,
-  unknownError
-}
-
-class WebSocketResult {
-  final bool success;
-  final WebSocketError? errorId;
-  final String? errorMessage;
-
-  WebSocketResult({
-    required this.success, 
-    this.errorId,
-    this.errorMessage
-  });
-
-  static String getErrorMessage(WebSocketError error) {
-    switch (error) {
-      case WebSocketError.noConnectionModule:
-        return "Connection module not available";
-      case WebSocketError.noValidToken:
-        return "Authentication token expired or invalid";
-      case WebSocketError.connectionFailed:
-        return "Failed to establish WebSocket connection";
-      case WebSocketError.unknownError:
-        return "An unknown error occurred";
-    }
-  }
-}
+import 'components/result_handler.dart';
+import 'components/broadcast_manager.dart';
+import 'components/message_manager.dart';
 
 class WebSocketModule extends ModuleBase {
   static final Logger _log = Logger();
@@ -64,6 +35,9 @@ class WebSocketModule extends ModuleBase {
   late SessionManager _sessionManager;
   late TokenManager _tokenManager;
   late EventHandler _eventHandler;
+  late ResultHandler _resultHandler;
+  late BroadcastManager _broadcastManager;
+  late MessageManager _messageManager;
 
   WebSocketModule() : super("websocket_module") {
     _log.info('✅ WebSocketModule initialized.');
@@ -74,6 +48,9 @@ class WebSocketModule extends ModuleBase {
     _sessionManager = SessionManager();
     _tokenManager = TokenManager(null); // Will be updated in _initDependencies
     _eventHandler = EventHandler();
+    _resultHandler = ResultHandler();
+    _broadcastManager = BroadcastManager();
+    _messageManager = MessageManager(_broadcastManager, _roomManager);
   }
 
   void _initDependencies(BuildContext context) {
@@ -90,6 +67,7 @@ class WebSocketModule extends ModuleBase {
   void _setupEventHandlers(IO.Socket socket) {
     _roomManager.setSocket(socket);
     _eventHandler.setSocket(socket);
+    _broadcastManager.setSocket(socket);
     _eventHandler.setupEventHandlers();
   }
 
@@ -98,11 +76,7 @@ class WebSocketModule extends ModuleBase {
 
     if (_connectionModule == null) {
       _log.error("❌ ConnectionsApiModule not available.");
-      return WebSocketResult(
-        success: false, 
-        errorId: WebSocketError.noConnectionModule,
-        errorMessage: WebSocketResult.getErrorMessage(WebSocketError.noConnectionModule)
-      );
+      return _resultHandler.createErrorResult(WebSocketError.noConnectionModule);
     }
 
     // Get fresh token
@@ -110,11 +84,7 @@ class WebSocketModule extends ModuleBase {
     String? accessToken = await _tokenManager.getValidToken();
     if (accessToken == null) {
       _log.error("❌ No valid access token available.");
-      return WebSocketResult(
-        success: false, 
-        errorId: WebSocketError.noValidToken,
-        errorMessage: WebSocketResult.getErrorMessage(WebSocketError.noValidToken)
-      );
+      return _resultHandler.createErrorResult(WebSocketError.noValidToken);
     }
     _log.info("✅ Got valid token for WebSocket connection");
 
@@ -122,11 +92,7 @@ class WebSocketModule extends ModuleBase {
       // Connect to WebSocket server
       final success = await _socketManager.connect(accessToken);
       if (!success) {
-        return WebSocketResult(
-          success: false, 
-          errorId: WebSocketError.connectionFailed,
-          errorMessage: WebSocketResult.getErrorMessage(WebSocketError.connectionFailed)
-        );
+        return _resultHandler.createErrorResult(WebSocketError.connectionFailed);
       }
 
       // Join room if specified
@@ -137,15 +103,11 @@ class WebSocketModule extends ModuleBase {
       // Start token refresh timer
       _tokenManager.startTokenRefreshTimer();
       
-      return WebSocketResult(success: true);
+      return _resultHandler.createSuccessResult();
     } catch (e) {
       _log.error("❌ WebSocket connection error: $e");
       await disconnect();
-      return WebSocketResult(
-        success: false, 
-        errorId: WebSocketError.unknownError,
-        errorMessage: "WebSocket connection error: $e"
-      );
+      return _resultHandler.createUnknownErrorResult("WebSocket connection error: $e");
     }
   }
 
@@ -183,126 +145,72 @@ class WebSocketModule extends ModuleBase {
 
   /// Creates a new room
   Future<bool> createRoom(String userId) async {
-    if (!_socketManager.isConnected) {
-      _log.error('Cannot create room: WebSocket is not connected');
-      return false;
-    }
-
-    try {
-      _log.info('Creating new room with user ID: $userId');
-      _socketManager.socket?.emit('create_room', {'user_id': userId});
-      return true;
-    } catch (e) {
-      _log.error('Error creating room: $e');
-      return false;
-    }
+    return _messageManager.createRoom(userId);
   }
 
   /// Sends a message to the current room
   Future<void> sendMessage(String message) async {
-    if (!_socketManager.isConnected) {
-      _log.error("❌ Cannot send message: WebSocket not connected");
-      return;
-    }
-
-    if (_roomManager.currentRoomId == null) {
-      _log.error("❌ Cannot send message: Not in a room");
-      return;
-    }
-
-    try {
-      _log.info("⚡ Sending message: $message");
-      _socketManager.socket?.emit('message', {
-        'message': message,
-        'room_id': _roomManager.currentRoomId
-      });
-    } catch (e) {
-      _log.error("❌ Error sending message: $e");
-    }
+    _messageManager.sendMessage(message);
   }
 
   /// Presses a button in the current room
   Future<void> pressButton() async {
-    if (!_socketManager.isConnected) {
-      _log.error("❌ Cannot press button: WebSocket not connected");
-      return;
-    }
-
-    if (_roomManager.currentRoomId == null) {
-      _log.error("❌ Cannot press button: Not in a room");
-      return;
-    }
-
-    try {
-      _log.info("⚡ Pressing button");
-      _socketManager.socket?.emit('button_press', {
-        'room_id': _roomManager.currentRoomId
-      });
-    } catch (e) {
-      _log.error("❌ Error pressing button: $e");
-    }
+    _messageManager.pressButton();
   }
 
   /// Gets the counter value from the current room
   Future<void> getCounter() async {
-    if (!_socketManager.isConnected) {
-      _log.error("❌ Cannot get counter: WebSocket not connected");
-      return;
-    }
-
-    if (_roomManager.currentRoomId == null) {
-      _log.error("❌ Cannot get counter: Not in a room");
-      return;
-    }
-
-    try {
-      _log.info("⚡ Getting counter value");
-      _socketManager.socket?.emit('get_counter', {
-        'room_id': _roomManager.currentRoomId
-      });
-    } catch (e) {
-      _log.error("❌ Error getting counter: $e");
-    }
+    _messageManager.getCounter();
   }
 
-  /// Gets the list of users in the current room
+  /// Gets the users in the current room
   Future<void> getUsers() async {
-    if (!_socketManager.isConnected) {
-      _log.error("❌ Cannot get users: WebSocket not connected");
-      return;
-    }
-
-    if (_roomManager.currentRoomId == null) {
-      _log.error("❌ Cannot get users: Not in a room");
-      return;
-    }
-
-    try {
-      _log.info("⚡ Getting users list");
-      _socketManager.socket?.emit('get_users', {
-        'room_id': _roomManager.currentRoomId
-      });
-    } catch (e) {
-      _log.error("❌ Error getting users: $e");
-    }
+    _messageManager.getUsers();
   }
 
+  /// Gets the current room ID
+  String? getCurrentRoomId() {
+    return _roomManager.currentRoomId;
+  }
+
+  /// Gets the session data
+  Map<String, dynamic>? getSessionData() {
+    return _sessionManager.sessionData;
+  }
+
+  /// Gets the user ID from the session
+  String? getUserId() {
+    return _sessionManager.getUserId();
+  }
+
+  /// Gets the username from the session
+  String? getUsername() {
+    return _sessionManager.getUsername();
+  }
+
+  /// Gets the rooms the user is in
+  List<String> getRooms() {
+    return _sessionManager.getRooms();
+  }
+
+  /// Checks if the user is in a specific room
+  bool isInRoom(String roomId) {
+    return _sessionManager.isInRoom(roomId);
+  }
+
+  /// Gets the event stream
+  Stream<Map<String, dynamic>> get eventStream => _eventHandler.eventStream;
+
+  /// Registers a handler for a specific event
   void registerEventHandler(String event, Function(Map<String, dynamic>) handler) {
     _eventHandler.registerHandler(event, handler);
   }
-
-  Stream<Map<String, dynamic>> get eventStream => _eventHandler.eventStream;
-
-  bool get isConnected => _socketManager.isConnected;
-  String? get currentRoomId => _roomManager.currentRoomId;
-  Map<String, dynamic>? get sessionData => _sessionManager.sessionData;
-  Map<String, Set<String>> get rooms => _roomManager.rooms;
-  Map<String, Set<String>> get sessionRooms => _roomManager.sessionRooms;
 
   @override
   void dispose() {
     _mounted = false;
     disconnect();
-    super.dispose();
+    _eventHandler.dispose();
+    _tokenManager.dispose();
   }
 } 

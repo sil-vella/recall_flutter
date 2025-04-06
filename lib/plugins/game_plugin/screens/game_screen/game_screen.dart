@@ -5,6 +5,7 @@ import '../../../../../core/managers/services_manager.dart';
 import '../../../../../tools/logging/logger.dart';
 import '../../../../../core/00_base/screen_base.dart';
 import '../../../../../core/managers/navigation_manager.dart';
+import '../../../main_plugin/modules/websocket_module/components/result_handler.dart';
 import '../../../main_plugin/modules/websocket_module/websocket_module.dart';
 import '../../../main_plugin/modules/login_module/login_module.dart';
 import 'components/components.dart';
