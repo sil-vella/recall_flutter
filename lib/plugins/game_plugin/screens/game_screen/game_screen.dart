@@ -266,12 +266,23 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
   }
 
   Future<void> _joinGame() async {
-    if (_roomController.text.isEmpty) return;
+    _log.info("🔍 _joinGame method called");
+    _log.info("🔍 Room ID: ${_roomController.text}");
+    _log.info("🔍 WebSocket module: ${_websocketModule != null ? 'available' : 'null'}");
+    
+    if (_roomController.text.isEmpty) {
+      _log.error("❌ Cannot join game: Room ID is empty");
+      return;
+    }
     
     try {
+      _log.info("⏳ Attempting to join room: ${_roomController.text}");
       // Join the room
       bool joined = await _websocketModule?.joinRoom(_roomController.text) ?? false;
+      _log.info("🔍 Join room result: $joined");
+      
       if (!joined) {
+        _log.error("❌ Failed to join game room");
         _logController.text += "❌ Failed to join game room\n";
         
         if (mounted) {
@@ -293,6 +304,7 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
       _scrollToBottom();
       
     } catch (e) {
+      _log.error("❌ Error joining game: $e");
       _logController.text += "❌ Error joining game: $e\n";
       _scrollToBottom();
       
