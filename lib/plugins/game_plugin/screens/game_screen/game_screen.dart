@@ -276,10 +276,10 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
     }
     
     try {
-      _log.info("⏳ Attempting to join room: ${_roomController.text}");
-      // Join the room
-      bool joined = await _websocketModule?.joinRoom(_roomController.text) ?? false;
-      _log.info("🔍 Join room result: $joined");
+      _log.info("⏳ Attempting to join game: ${_roomController.text}");
+      // Join the game room
+      bool joined = await _websocketModule?.joinGame(_roomController.text) ?? false;
+      _log.info("🔍 Join game result: $joined");
       
       if (!joined) {
         _log.error("❌ Failed to join game room");
@@ -300,23 +300,13 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
         _currentRoomId = _roomController.text;
       });
       
-      _logController.text += "⏳ Joining room: ${_roomController.text}\n";
+      _logController.text += "✅ Successfully joined game room: ${_roomController.text}\n";
       _scrollToBottom();
       
     } catch (e) {
       _log.error("❌ Error joining game: $e");
       _logController.text += "❌ Error joining game: $e\n";
       _scrollToBottom();
-      
-      // Show error message to user
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to join game room: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
     }
   }
 

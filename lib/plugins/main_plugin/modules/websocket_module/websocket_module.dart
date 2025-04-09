@@ -135,8 +135,26 @@ class WebSocketModule extends ModuleBase {
     }
   }
 
-  Future<bool> joinRoom(String roomId, {Map<String, dynamic>? data}) async {
-    return await _roomManager.joinRoom(roomId, data: data);
+  Future<bool> joinRoom(String roomId) async {
+    return _roomManager.joinRoom(roomId);
+  }
+
+  Future<bool> joinGame(String roomId) async {
+    _log.info("🎮 Joining game room: $roomId");
+    if (_socketManager.socket == null) {
+      _log.error("❌ Cannot join game: Socket not connected");
+      return false;
+    }
+
+    try {
+      _socketManager.socket!.emit('join_game', {
+        'session_id': roomId
+      });
+      return true;
+    } catch (e) {
+      _log.error("❌ Error joining game: $e");
+      return false;
+    }
   }
 
   Future<bool> leaveRoom(String roomId) async {
