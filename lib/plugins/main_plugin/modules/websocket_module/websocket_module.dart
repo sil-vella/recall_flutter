@@ -141,20 +141,7 @@ class WebSocketModule extends ModuleBase {
 
   Future<bool> joinGame(String roomId) async {
     _log.info("🎮 Joining game room: $roomId");
-    if (_socketManager.socket == null) {
-      _log.error("❌ Cannot join game: Socket not connected");
-      return false;
-    }
-
-    try {
-      _socketManager.socket!.emit('join_game', {
-        'session_id': roomId
-      });
-      return true;
-    } catch (e) {
-      _log.error("❌ Error joining game: $e");
-      return false;
-    }
+    return _roomManager.joinRoom(roomId);
   }
 
   Future<bool> leaveRoom(String roomId) async {
