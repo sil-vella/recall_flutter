@@ -160,15 +160,15 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
       }
       
       final result = await _websocketModule?.connect(context);
-      if (result == null || !result.success) {
+      if (result == null || !result.isSuccess) {
         setState(() {
           _isConnected = false;
           _currentRoomId = null;
         });
-        _logController.text += "❌ Failed to connect to WebSocket server: ${result?.errorMessage ?? 'Unknown error'}\n";
+        _logController.text += "❌ Failed to connect to WebSocket server: ${result?.error ?? 'Unknown error'}\n";
         
         // Handle token expiration
-        if (result?.errorId == WebSocketError.noValidToken && _loginModule != null) {
+        if (result?.error?.contains('token') == true && _loginModule != null) {
           _logController.text += "❌ Session expired. Please log in again.\n";
           _scrollToBottom();
           
@@ -186,7 +186,7 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Failed to connect to WebSocket server: ${result?.errorMessage ?? 'Unknown error'}'),
+              content: Text('Failed to connect to WebSocket server: ${result?.error ?? 'Unknown error'}'),
               backgroundColor: Colors.red,
             ),
           );
@@ -250,9 +250,9 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
       _logController.text += "⏳ Creating new room...\n";
       _scrollToBottom();
       
-      bool success = await _websocketModule?.createRoom(_userId!) ?? false;
-      if (!success) {
-        _logController.text += "❌ Failed to create room\n";
+      final result = await _websocketModule?.createRoom(_userId!);
+      if (result == null || !result.isSuccess) {
+        _logController.text += "❌ Failed to create room: ${result?.error ?? 'Unknown error'}\n";
         _scrollToBottom();
         return;
       }
@@ -278,17 +278,17 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
     try {
       _log.info("⏳ Attempting to join game: ${_roomController.text}");
       // Join the game room
-      bool joined = await _websocketModule?.joinGame(_roomController.text) ?? false;
-      _log.info("🔍 Join game result: $joined");
+      final result = await _websocketModule?.joinGame(_roomController.text);
+      _log.info("🔍 Join game result: ${result?.isSuccess}");
       
-      if (!joined) {
-        _log.error("❌ Failed to join game room");
-        _logController.text += "❌ Failed to join game room\n";
+      if (result == null || !result.isSuccess) {
+        _log.error("❌ Failed to join game room: ${result?.error ?? 'Unknown error'}");
+        _logController.text += "❌ Failed to join game room: ${result?.error ?? 'Unknown error'}\n";
         
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Failed to join game room'),
+            SnackBar(
+              content: Text('Failed to join game room: ${result?.error ?? 'Unknown error'}'),
               backgroundColor: Colors.red,
             ),
           );

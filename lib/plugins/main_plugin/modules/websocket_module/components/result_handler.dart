@@ -1,67 +1,62 @@
 import '../../../../../../tools/logging/logger.dart';
 
-enum WebSocketError {
-  noConnectionModule,
-  noValidToken,
-  connectionFailed,
-  unknownError
-}
-
 class WebSocketResult {
-  final bool success;
-  final WebSocketError? errorId;
-  final String? errorMessage;
+  final String eventType;
   final dynamic data;
+  final String? error;
+  final bool isSuccess;
 
   WebSocketResult({
-    required this.success, 
-    this.errorId,
-    this.errorMessage,
-    this.data
+    required this.eventType,
+    this.data,
+    this.error,
+    required this.isSuccess,
   });
 
-  static String getErrorMessage(WebSocketError error) {
-    switch (error) {
-      case WebSocketError.noConnectionModule:
-        return "Connection module not available";
-      case WebSocketError.noValidToken:
-        return "Authentication token expired or invalid";
-      case WebSocketError.connectionFailed:
-        return "Failed to establish WebSocket connection";
-      case WebSocketError.unknownError:
-        return "An unknown error occurred";
-    }
+  factory WebSocketResult.success(String eventType, {dynamic data}) {
+    return WebSocketResult(
+      eventType: eventType,
+      data: data,
+      isSuccess: true,
+    );
+  }
+
+  factory WebSocketResult.error(String eventType, String error) {
+    return WebSocketResult(
+      eventType: eventType,
+      error: error,
+      isSuccess: false,
+    );
   }
 }
 
 class ResultHandler {
   static final Logger _log = Logger();
 
-  WebSocketResult createSuccessResult({dynamic data}) {
-    return WebSocketResult(
-      success: true,
-      data: data
-    );
+  WebSocketResult createSuccessResult(String eventType, {dynamic data}) {
+    _log.info("✅ $eventType successful: $data");
+    return WebSocketResult.success(eventType, data: data);
   }
 
-  WebSocketResult createErrorResult(WebSocketError error, {String? customMessage}) {
-    final message = customMessage ?? WebSocketResult.getErrorMessage(error);
-    _log.error("❌ WebSocket error: $message");
-    
-    return WebSocketResult(
-      success: false,
-      errorId: error,
-      errorMessage: message
-    );
+  WebSocketResult createErrorResult(String eventType, String error) {
+    _log.error("❌ $eventType failed: $error");
+    return WebSocketResult.error(eventType, error);
   }
 
-  WebSocketResult createUnknownErrorResult(String errorMessage) {
-    _log.error("❌ WebSocket unknown error: $errorMessage");
-    
-    return WebSocketResult(
-      success: false,
-      errorId: WebSocketError.unknownError,
-      errorMessage: errorMessage
-    );
+  WebSocketResult createUnknownErrorResult(String eventType, String error) {
+    _log.error("❌ Unknown error in $eventType: $error");
+    return WebSocketResult.error(eventType, "An unknown error occurred: $error");
+  }
+
+  WebSocketResult createNoConnectionResult() {
+    return WebSocketResult.error('connection', 'No WebSocket connection available');
+  }
+
+  WebSocketResult createInvalidTokenResult() {
+    return WebSocketResult.error('connection', 'Invalid or expired token');
+  }
+
+  WebSocketResult createRateLimitResult() {
+    return WebSocketResult.error('connection', 'Rate limit exceeded');
   }
 } 

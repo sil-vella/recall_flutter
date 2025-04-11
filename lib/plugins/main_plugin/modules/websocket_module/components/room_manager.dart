@@ -1,5 +1,6 @@
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import '../../../../../../tools/logging/logger.dart';
+import 'result_handler.dart';
 
 class RoomManager {
   static final Logger _log = Logger();
@@ -7,6 +8,7 @@ class RoomManager {
   final Map<String, Set<String>> _sessionRooms = {};
   String? _currentRoomId;
   IO.Socket? _socket;
+  final ResultHandler _resultHandler = ResultHandler();
 
   RoomManager(this._socket);
 
@@ -18,10 +20,9 @@ class RoomManager {
     _socket = socket;
   }
 
-  Future<bool> joinRoom(String roomId, {Map<String, dynamic>? data}) async {
+  Future<WebSocketResult> joinRoom(String roomId, {Map<String, dynamic>? data}) async {
     if (_socket == null) {
-      _log.error("❌ Cannot join room: Socket not connected");
-      return false;
+      return _resultHandler.createNoConnectionResult();
     }
 
     try {
@@ -46,17 +47,16 @@ class RoomManager {
       }
 
       _log.info("✅ Joined room: $roomId");
-      return true;
+      return _resultHandler.createSuccessResult('join_room', data: {'room_id': roomId});
     } catch (e) {
       _log.error("❌ Error joining room: $e");
-      return false;
+      return _resultHandler.createUnknownErrorResult('join_room', e.toString());
     }
   }
 
-  Future<bool> leaveRoom(String roomId) async {
+  Future<WebSocketResult> leaveRoom(String roomId) async {
     if (_socket == null) {
-      _log.error("❌ Cannot leave room: Socket not connected");
-      return false;
+      return _resultHandler.createNoConnectionResult();
     }
 
     try {
@@ -76,10 +76,10 @@ class RoomManager {
       }
 
       _log.info("✅ Left room: $roomId");
-      return true;
+      return _resultHandler.createSuccessResult('leave_room', data: {'room_id': roomId});
     } catch (e) {
       _log.error("❌ Error leaving room: $e");
-      return false;
+      return _resultHandler.createUnknownErrorResult('leave_room', e.toString());
     }
   }
 

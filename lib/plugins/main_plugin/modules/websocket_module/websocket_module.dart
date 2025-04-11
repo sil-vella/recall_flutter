@@ -50,7 +50,7 @@ class WebSocketModule extends ModuleBase {
     _eventHandler = EventHandler();
     _resultHandler = ResultHandler();
     _broadcastManager = BroadcastManager();
-    _messageManager = MessageManager(_broadcastManager, _roomManager);
+    _messageManager = MessageManager(_roomManager, _socketManager.socket);
   }
 
   void _initDependencies(BuildContext context) {
@@ -75,16 +75,14 @@ class WebSocketModule extends ModuleBase {
     _initDependencies(context);
 
     if (_connectionModule == null) {
-      _log.error("❌ ConnectionsApiModule not available.");
-      return _resultHandler.createErrorResult(WebSocketError.noConnectionModule);
+      return _resultHandler.createErrorResult('connect', 'ConnectionsApiModule not available');
     }
 
     // Get fresh token
     _log.info("🔑 Getting valid token for WebSocket connection...");
     String? accessToken = await _tokenManager.getValidToken();
     if (accessToken == null) {
-      _log.error("❌ No valid access token available.");
-      return _resultHandler.createErrorResult(WebSocketError.noValidToken);
+      return _resultHandler.createErrorResult('connect', 'No valid access token available');
     }
     _log.info("✅ Got valid token for WebSocket connection");
 
@@ -92,22 +90,25 @@ class WebSocketModule extends ModuleBase {
       // Connect to WebSocket server
       final success = await _socketManager.connect(accessToken);
       if (!success) {
-        return _resultHandler.createErrorResult(WebSocketError.connectionFailed);
+        return _resultHandler.createErrorResult('connect', 'Connection failed');
       }
 
       // Join room if specified
       if (roomId != null) {
-        await _roomManager.joinRoom(roomId);
+        final joinResult = await _roomManager.joinRoom(roomId);
+        if (!joinResult.isSuccess) {
+          return joinResult;
+        }
       }
 
       // Start token refresh timer
       _tokenManager.startTokenRefreshTimer();
       
-      return _resultHandler.createSuccessResult();
+      return _resultHandler.createSuccessResult('connect', data: {'session_id': _socketManager.socket?.id});
     } catch (e) {
       _log.error("❌ WebSocket connection error: $e");
       await disconnect();
-      return _resultHandler.createUnknownErrorResult("WebSocket connection error: $e");
+      return _resultHandler.createUnknownErrorResult('connect', e.toString());
     }
   }
 
@@ -135,78 +136,64 @@ class WebSocketModule extends ModuleBase {
     }
   }
 
-  Future<bool> joinRoom(String roomId) async {
+  Future<WebSocketResult> joinRoom(String roomId) async {
     return _roomManager.joinRoom(roomId);
   }
 
-  Future<bool> joinGame(String roomId) async {
-    _log.info("🎮 Joining game room: $roomId");
+  Future<WebSocketResult> joinGame(String roomId) async {
     return _roomManager.joinRoom(roomId);
   }
 
-  Future<bool> leaveRoom(String roomId) async {
-    return await _roomManager.leaveRoom(roomId);
+  Future<WebSocketResult> leaveRoom(String roomId) async {
+    return _roomManager.leaveRoom(roomId);
   }
 
-  /// Creates a new room
-  Future<bool> createRoom(String userId) async {
+  Future<WebSocketResult> createRoom(String userId) async {
     return _messageManager.createRoom(userId);
   }
 
-  /// Sends a message to the current room
-  Future<void> sendMessage(String message) async {
-    _messageManager.sendMessage(message);
+  Future<WebSocketResult> sendMessage(String message) async {
+    return _messageManager.sendMessage(message);
   }
 
-  /// Presses a button in the current room
-  Future<void> pressButton() async {
-    _messageManager.pressButton();
+  Future<WebSocketResult> pressButton() async {
+    return _messageManager.pressButton();
   }
 
-  /// Gets the counter value from the current room
-  Future<void> getCounter() async {
-    _messageManager.getCounter();
+  Future<WebSocketResult> getCounter() async {
+    return _messageManager.getCounter();
   }
 
-  /// Gets the users in the current room
-  Future<void> getUsers() async {
-    _messageManager.getUsers();
+  Future<WebSocketResult> getUsers() async {
+    return _messageManager.getUsers();
   }
 
-  /// Gets the current room ID
   String? getCurrentRoomId() {
     return _roomManager.currentRoomId;
   }
 
-  /// Gets the session data
   Map<String, dynamic>? getSessionData() {
     return _sessionManager.sessionData;
   }
 
-  /// Gets the user ID from the session
   String? getUserId() {
     return _sessionManager.getUserId();
   }
 
-  /// Gets the username from the session
   String? getUsername() {
     return _sessionManager.getUsername();
   }
 
-  /// Gets the rooms the user is in
   List<String> getRooms() {
     return _sessionManager.getRooms();
   }
 
-  /// Checks if the user is in a specific room
   bool isInRoom(String roomId) {
     return _sessionManager.isInRoom(roomId);
   }
 
-  /// Gets the event stream
   Stream<Map<String, dynamic>> get eventStream => _eventHandler.eventStream;
 
-  /// Registers a handler for a specific event
   void registerEventHandler(String event, Function(Map<String, dynamic>) handler) {
     _eventHandler.registerHandler(event, handler);
   }
