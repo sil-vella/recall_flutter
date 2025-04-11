@@ -10,6 +10,7 @@ import '../../../main_plugin/modules/websocket_module/websocket_module.dart';
 import '../../../main_plugin/modules/login_module/login_module.dart';
 import 'components/components.dart';
 import 'package:go_router/go_router.dart';
+import 'dart:async';
 
 class GameScreen extends BaseScreen {
   const GameScreen({Key? key}) : super(key: key);
@@ -122,6 +123,11 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
           _scrollToBottom();
           break;
         case 'error':
+          if (event['data']['message']?.contains('Failed to join room') == true) {
+            setState(() {
+              _currentRoomId = null;
+            });
+          }
           _logController.text += "❌ Error: ${event['data']['message']}\n";
           _scrollToBottom();
           break;
@@ -277,6 +283,19 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
     
     try {
       _log.info("⏳ Attempting to join game: ${_roomController.text}");
+      
+      // Create a completer to wait for the room_joined event
+      final completer = Completer<bool>();
+      
+      // Set up a one-time listener for the room_joined event
+      final subscription = _websocketModule?.eventStream.listen((event) {
+        if (event['type'] == 'room_joined' && event['data']['room_id'] == _roomController.text) {
+          completer.complete(true);
+        } else if (event['type'] == 'error' && event['data']['message']?.contains('Failed to join room') == true) {
+          completer.complete(false);
+        }
+      });
+      
       // Join the game room
       final result = await _websocketModule?.joinGame(_roomController.text);
       _log.info("🔍 Join game result: ${result?.isSuccess}");
@@ -293,13 +312,37 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
             ),
           );
         }
+        subscription?.cancel();
         return;
       }
       
-      setState(() {
-        _currentRoomId = _roomController.text;
-      });
+      // Wait for the room_joined event with a timeout
+      final success = await completer.future.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () {
+          _log.error("❌ Timeout waiting for room join confirmation");
+          return false;
+        },
+      );
       
+      subscription?.cancel();
+      
+      if (!success) {
+        _log.error("❌ Failed to join game room: Room does not exist or join failed");
+        _logController.text += "❌ Failed to join game room: Room does not exist or join failed\n";
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to join game room: Room does not exist or join failed'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+      
+      // State update is now handled by the event listener
       _logController.text += "✅ Successfully joined game room: ${_roomController.text}\n";
       _scrollToBottom();
       

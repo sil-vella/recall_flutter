@@ -1,6 +1,7 @@
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import '../../../../../../tools/logging/logger.dart';
 import 'result_handler.dart';
+import 'dart:async';
 
 class RoomManager {
   static final Logger _log = Logger();
@@ -33,21 +34,57 @@ class RoomManager {
         await leaveRoom(_currentRoomId!);
       }
 
+      // Create a completer to wait for the room_joined event
+      final completer = Completer<WebSocketResult>();
+      
+      // Set up a one-time listener for the room_joined event
+      void onRoomJoined(data) {
+        if (data['room_id'] == roomId) {
+          _currentRoomId = roomId;
+          _rooms[roomId] = _rooms[roomId] ?? {};
+          _rooms[roomId]!.add(_socket!.id!);
+          _sessionRooms[_socket!.id!] = _sessionRooms[_socket!.id!] ?? {};
+          _sessionRooms[_socket!.id!]!.add(roomId);
+          completer.complete(_resultHandler.createSuccessResult('join_room', data: {'room_id': roomId}));
+        }
+      }
+
+      // Set up a one-time listener for errors
+      void onError(data) {
+        if (data['message']?.contains('Failed to join room') == true) {
+          completer.complete(_resultHandler.createErrorResult('join_room', data['message']));
+        }
+      }
+
+      // Add event listeners
+      _socket!.on('room_joined', onRoomJoined);
+      _socket!.on('error', onError);
+
       // Join new room
       _socket!.emit('join_room', {
         'room_id': roomId,
         if (data != null) ...data
       });
 
-      // Update state
-      _currentRoomId = roomId;
-      if (_socket!.id != null) {
-        _rooms.putIfAbsent(roomId, () => {}).add(_socket!.id!);
-        _sessionRooms.putIfAbsent(_socket!.id!, () => {}).add(roomId);
+      // Wait for the room_joined event with a timeout
+      try {
+        final result = await completer.future.timeout(
+          const Duration(seconds: 5),
+          onTimeout: () {
+            return _resultHandler.createErrorResult('join_room', 'Timeout waiting for room join confirmation');
+          },
+        );
+        
+        // Remove event listeners
+        _socket!.off('room_joined', onRoomJoined);
+        _socket!.off('error', onError);
+        return result;
+      } catch (e) {
+        // Remove event listeners
+        _socket!.off('room_joined', onRoomJoined);
+        _socket!.off('error', onError);
+        return _resultHandler.createUnknownErrorResult('join_room', e.toString());
       }
-
-      _log.info("✅ Joined room: $roomId");
-      return _resultHandler.createSuccessResult('join_room', data: {'room_id': roomId});
     } catch (e) {
       _log.error("❌ Error joining room: $e");
       return _resultHandler.createUnknownErrorResult('join_room', e.toString());
@@ -67,7 +104,7 @@ class RoomManager {
         'room_id': roomId
       });
 
-      // Update state
+      // Update state immediately for leave operations
       _rooms[roomId]?.remove(_socket!.id);
       _sessionRooms[_socket!.id]?.remove(roomId);
       
