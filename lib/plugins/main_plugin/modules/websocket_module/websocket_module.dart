@@ -50,7 +50,7 @@ class WebSocketModule extends ModuleBase {
     _eventHandler = EventHandler();
     _resultHandler = ResultHandler();
     _broadcastManager = BroadcastManager();
-    _messageManager = MessageManager(_roomManager, _socketManager.socket);
+    _messageManager = MessageManager(_roomManager, _socketManager);
   }
 
   void _initDependencies(BuildContext context) {
@@ -93,6 +93,19 @@ class WebSocketModule extends ModuleBase {
         return _resultHandler.createErrorResult('connect', 'Connection failed');
       }
 
+      // Wait for session ID to be available
+      int attempts = 0;
+      while (_socketManager.socket?.id == null && attempts < 10) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        attempts++;
+      }
+
+      if (_socketManager.socket?.id == null) {
+        _log.error("❌ Failed to get session ID after connection");
+        await disconnect();
+        return _resultHandler.createErrorResult('connect', 'Failed to get session ID');
+      }
+
       // Join room if specified
       if (roomId != null) {
         final joinResult = await _roomManager.joinRoom(roomId);
@@ -104,7 +117,10 @@ class WebSocketModule extends ModuleBase {
       // Start token refresh timer
       _tokenManager.startTokenRefreshTimer();
       
-      return _resultHandler.createSuccessResult('connect', data: {'session_id': _socketManager.socket?.id});
+      return _resultHandler.createSuccessResult('connect', data: {
+        'session_id': _socketManager.socket?.id,
+        'connected': _socketManager.isConnected
+      });
     } catch (e) {
       _log.error("❌ WebSocket connection error: $e");
       await disconnect();

@@ -51,10 +51,19 @@ class SocketConnectionManager {
       // Connect to server
       _log.info("🔌 Connecting socket...");
       _socket!.connect();
-      _isConnected = true;
+
+      // Wait for connection to be established
+      await Future.delayed(const Duration(milliseconds: 500));
       
-      _log.info("✅ Connected to WebSocket server");
-      return true;
+      if (_socket!.connected) {
+        _isConnected = true;
+        _log.info("✅ Connected to WebSocket server with session ID: ${_socket!.id}");
+        return true;
+      } else {
+        _log.error("❌ Failed to establish WebSocket connection");
+        await disconnect();
+        return false;
+      }
 
     } catch (e) {
       _log.error("❌ WebSocket connection error: $e");

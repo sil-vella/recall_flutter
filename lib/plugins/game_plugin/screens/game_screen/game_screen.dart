@@ -253,21 +253,49 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
     }
 
     try {
+      _log.info("🔍 _createRoom method called");
+      _log.info("🔍 User ID: $_userId");
+      _log.info("🔍 WebSocket module: ${_websocketModule != null ? 'available' : 'null'}");
+      
       _logController.text += "⏳ Creating new room...\n";
       _scrollToBottom();
       
+      // Create the room
       final result = await _websocketModule?.createRoom(_userId!);
+      _log.info("🔍 Create room result: ${result?.isSuccess}");
+      
       if (result == null || !result.isSuccess) {
+        _log.error("❌ Failed to create room: ${result?.error ?? 'Unknown error'}");
         _logController.text += "❌ Failed to create room: ${result?.error ?? 'Unknown error'}\n";
-        _scrollToBottom();
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to create room: ${result?.error ?? 'Unknown error'}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
         return;
       }
       
+      // The room state will be updated by the event listener in _setupWebSocketListeners
       _logController.text += "✅ Room creation request sent\n";
       _scrollToBottom();
+      
     } catch (e) {
+      _log.error("❌ Error creating room: $e");
       _logController.text += "❌ Error creating room: $e\n";
       _scrollToBottom();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error creating room: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 

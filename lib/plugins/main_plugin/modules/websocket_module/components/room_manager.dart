@@ -14,6 +14,7 @@ class RoomManager {
   RoomManager(this._socket);
 
   String? get currentRoomId => _currentRoomId;
+  set currentRoomId(String? value) => _currentRoomId = value;
   Map<String, Set<String>> get rooms => _rooms;
   Map<String, Set<String>> get sessionRooms => _sessionRooms;
 
