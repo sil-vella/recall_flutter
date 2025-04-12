@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../../../../core/managers/state_manager.dart';
 
 class GameControls extends StatelessWidget {
   final TextEditingController roomController;
@@ -18,52 +20,89 @@ class GameControls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.all(8.0),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              controller: roomController,
-              decoration: const InputDecoration(
-                labelText: 'Room ID',
-                hintText: 'Enter room ID to join',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
+    return Consumer<StateManager>(
+      builder: (context, stateManager, child) {
+        final roomState = stateManager.getPluginState<Map<String, dynamic>>("game_room") ?? {};
+        final isLoading = roomState["isLoading"] ?? false;
+        final error = roomState["error"];
+
+        return Card(
+          margin: const EdgeInsets.all(8.0),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: isConnected ? onCreateGame : null,
-                    child: const Text('Create New Game'),
+                TextField(
+                  controller: roomController,
+                  decoration: const InputDecoration(
+                    labelText: 'Room ID',
+                    hintText: 'Enter room ID to join',
+                    border: OutlineInputBorder(),
                   ),
+                  enabled: !isLoading,
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: isConnected && roomController.text.isNotEmpty
-                        ? onJoinGame
-                        : null,
-                    child: const Text('Join Game'),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: isConnected && !isLoading ? onCreateGame : null,
+                        child: isLoading 
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                ),
+                              )
+                            : const Text('Create New Game'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: isConnected && roomController.text.isNotEmpty && !isLoading
+                            ? onJoinGame
+                            : null,
+                        child: isLoading 
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                ),
+                              )
+                            : const Text('Join Game'),
+                      ),
+                    ),
+                  ],
+                ),
+                if (error != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    error,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Colors.red,
+                    ),
+                    textAlign: TextAlign.center,
                   ),
-                ),
+                ],
+                if (currentRoomId != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Current Room: $currentRoomId',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                    textAlign: TextAlign.center,
+                  ),
+                ],
               ],
             ),
-            if (currentRoomId != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Current Room: $currentRoomId',
-                style: Theme.of(context).textTheme.bodyMedium,
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 } 

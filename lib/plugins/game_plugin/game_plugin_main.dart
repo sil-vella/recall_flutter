@@ -62,9 +62,16 @@ class GamePlugin extends PluginBase {
   @override
   Map<String, Map<String, dynamic>> getInitialStates() {
     return {
+      "game_room": {
+        "roomId": null,
+        "isConnected": false,
+        "roomState": null,
+        "userId": null,
+        "joinLink": null,
+      },
       "game_timer": {
         "isRunning": false,
-        "duration": 30, // Default duration
+        "duration": 30,
       },
       "game_round": {
         "roundNumber": 0,
@@ -139,6 +146,18 @@ class GamePlugin extends PluginBase {
     } catch (e) {
       Logger().error("❌ Error initializing category system: $e", error: e);
     }
+  }
+
+  /// Update room state
+  void updateRoomState(BuildContext context, Map<String, dynamic> state) {
+    final stateManager = Provider.of<StateManager>(context, listen: false);
+    stateManager.updatePluginState("game_room", state);
+  }
+
+  /// Get current room state
+  Map<String, dynamic> getRoomState(BuildContext context) {
+    final stateManager = Provider.of<StateManager>(context, listen: false);
+    return stateManager.getPluginState<Map<String, dynamic>>("game_room") ?? {};
   }
 
 }
