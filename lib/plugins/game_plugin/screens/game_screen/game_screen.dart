@@ -301,9 +301,6 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
       _logController.text += "⏳ Creating new room...\n";
       _scrollToBottom();
       
-      // Create a new completer for this room creation
-      _roomCreationCompleter = Completer<bool>();
-      
       final result = await _websocketModule?.createRoom(userId!);
       _log.info("🔍 Create room result: ${result?.isSuccess}");
       
@@ -323,38 +320,20 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
             ),
           );
         }
-        _roomCreationCompleter?.complete(false);
-        _roomCreationCompleter = null;
         return;
       }
 
-      // Wait for the room_created event with timeout
-      final success = await _roomCreationCompleter?.future.timeout(
-        const Duration(seconds: 5),
-        onTimeout: () {
-          _log.error("❌ Timeout waiting for room creation confirmation");
-          return false;
+      // Update state with room data from the result
+      _updateRoomState(<String, dynamic>{
+        "roomId": result.data?['room_id'],
+        "isConnected": true,
+        "roomState": <String, dynamic>{
+          "current_size": result.data?['current_size'] ?? 1,
+          "max_size": result.data?['max_size'] ?? 2,
         },
-      ) ?? false;
-
-      if (!success) {
-        _updateRoomState(<String, dynamic>{
-          "isLoading": false,
-          "error": "Timeout waiting for room creation confirmation",
-        });
-        _log.error("❌ Failed to create room: Timeout waiting for confirmation");
-        _logController.text += "❌ Failed to create room: Timeout waiting for confirmation\n";
-        
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Failed to create room: Timeout waiting for confirmation'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-        return;
-      }
+        "isLoading": false,
+        "error": null,
+      });
       
       _logController.text += "✅ Room created successfully\n";
       _scrollToBottom();
@@ -376,8 +355,6 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
           ),
         );
       }
-      _roomCreationCompleter?.complete(false);
-      _roomCreationCompleter = null;
     }
   }
 
