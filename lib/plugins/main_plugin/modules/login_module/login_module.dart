@@ -29,6 +29,16 @@ class LoginModule extends ModuleBase {
     _sharedPref = _servicesManager.getService<SharedPrefManager>('shared_pref');
     _connectionModule = _moduleManager.getLatestModule<ConnectionsApiModule>();
     _currentContext = context;
+
+    // Initialize login state in StateManager
+    final stateManager = Provider.of<StateManager>(context, listen: false);
+    stateManager.registerPluginState("login", {
+      "isLoggedIn": _sharedPref?.getBool('is_logged_in') ?? false,
+      "userId": _sharedPref?.getInt('user_id'),
+      "username": _sharedPref?.getString('username'),
+      "email": _sharedPref?.getString('email'),
+      "error": null
+    });
   }
 
   Future<Map<String, dynamic>> getUserStatus(BuildContext context) async {
@@ -134,6 +144,16 @@ class LoginModule extends ModuleBase {
           refreshToken: tokens["refresh_token"],
         );
 
+        // Update state in StateManager
+        final stateManager = Provider.of<StateManager>(context, listen: false);
+        stateManager.updatePluginState("login", {
+          "isLoggedIn": true,
+          "userId": user["id"],
+          "username": user["username"],
+          "email": email,
+          "error": null
+        });
+
         return {"success": "Login Successful!"};
       } else {
         return {"error": response?["error"] ?? "Invalid email or password."};
@@ -176,6 +196,16 @@ class LoginModule extends ModuleBase {
 
         // Clear connection module tokens
         _connectionModule!.clearAuthTokens();
+
+        // Update state in StateManager
+        final stateManager = Provider.of<StateManager>(context, listen: false);
+        stateManager.updatePluginState("login", {
+          "isLoggedIn": false,
+          "userId": null,
+          "username": null,
+          "email": null,
+          "error": null
+        });
 
         return {"success": "Logged out successfully!"};
       } else {

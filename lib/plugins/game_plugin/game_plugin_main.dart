@@ -40,6 +40,29 @@ class GamePlugin extends PluginBase {
       moduleManager.registerModule(module, instanceKey: instanceKey);
     }
 
+    // ✅ Initialize game states in StateManager
+    stateManager.registerPluginState("game_room", {
+      "roomId": null,
+      "isConnected": false,
+      "roomState": null,
+      "userId": null,
+      "joinLink": null,
+      "isLoading": false,
+      "error": null
+    });
+
+    stateManager.registerPluginState("game_timer", {
+      "isRunning": false,
+      "duration": 30,
+    });
+
+    stateManager.registerPluginState("game_round", {
+      "roundNumber": 0,
+      "hint": false,
+      "imagesLoaded": false,
+      "factLoaded": false,
+    });
+
     // ✅ Check if WebSocketModule is available
     final websocketModule = moduleManager.getLatestModule<WebSocketModule>();
     if (websocketModule == null) {
@@ -68,6 +91,8 @@ class GamePlugin extends PluginBase {
         "roomState": null,
         "userId": null,
         "joinLink": null,
+        "isLoading": false,
+        "error": null
       },
       "game_timer": {
         "isRunning": false,

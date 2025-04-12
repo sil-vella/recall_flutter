@@ -117,7 +117,7 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
 
       switch (event['type']) {
         case 'room_joined':
-          _updateRoomState(<String, dynamic>{
+          _stateManager.updatePluginState("game_room", <String, dynamic>{
             "roomId": event['data']['room_id'],
             "isConnected": true,
             "roomState": <String, dynamic>{
@@ -133,7 +133,8 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
           _roomJoinCompleter = null;
           break;
         case 'room_created':
-          _updateRoomState(<String, dynamic>{
+          _log.info("📨 Received room_created event: ${event['data']}");
+          _stateManager.updatePluginState("game_room", <String, dynamic>{
             "roomId": event['data']['room_id'],
             "isConnected": true,
             "roomState": <String, dynamic>{
@@ -146,18 +147,22 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
               "allowed_roles": event['data']['allowed_roles'],
               "join_link": event['data']['join_link'],
             },
+            "joinLink": event['data']['join_link'],
             "isLoading": false,
             "error": null,
           });
+          _log.info("✅ Updated state for 'game_room': ${_stateManager.getPluginState<Map<String, dynamic>>("game_room")}");
           _logController.text += "✅ Room created: ${event['data']['room_id']}\n";
           _scrollToBottom();
           _roomCreationCompleter?.complete(true);
           _roomCreationCompleter = null;
           break;
         case 'room_state':
-          _updateRoomState(<String, dynamic>{
+          final currentState = _stateManager.getPluginState<Map<String, dynamic>>("game_room") ?? {};
+          _stateManager.updatePluginState("game_room", <String, dynamic>{
+            ...currentState,
             "roomState": <String, dynamic>{
-              ...roomState["roomState"] ?? <String, dynamic>{},
+              ...currentState["roomState"] ?? {},
               ...event['data'],
             },
           });
@@ -166,7 +171,7 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
           break;
         case 'error':
           if (event['data']['message']?.contains('Failed to join room') == true) {
-            _updateRoomState(<String, dynamic>{
+            _stateManager.updatePluginState("game_room", <String, dynamic>{
               "roomId": null,
               "roomState": null,
               "isLoading": false,
@@ -201,30 +206,19 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
       }
       
       final result = await _websocketModule?.connect(context);
-      if (result == null || !result.isSuccess) {
-        _updateRoomState({
+      if (result == null || !result) {
+        _stateManager.updatePluginState("game_room", {
           "isConnected": false,
           "roomId": null,
+          "isLoading": false,
+          "error": "Failed to connect to WebSocket server"
         });
-        _logController.text += "❌ Failed to connect to WebSocket server: ${result?.error ?? 'Unknown error'}\n";
-        
-        if (result?.error?.contains('token') == true && _loginModule != null) {
-          _logController.text += "❌ Session expired. Please log in again.\n";
-          _scrollToBottom();
-          
-          await _loginModule!.logoutUser(context);
-          
-          if (mounted) {
-            _log.info("🔀 Navigating to account screen due to token expiration");
-            context.go('/account');
-          }
-          return;
-        }
+        _logController.text += "❌ Failed to connect to WebSocket server\n";
         
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Failed to connect to WebSocket server: ${result?.error ?? 'Unknown error'}'),
+            const SnackBar(
+              content: Text('Failed to connect to WebSocket server'),
               backgroundColor: Colors.red,
             ),
           );
@@ -232,14 +226,20 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
         return;
       }
       
-      _updateRoomState({"isConnected": true});
+      _stateManager.updatePluginState("game_room", {
+        "isConnected": true,
+        "isLoading": false,
+        "error": null
+      });
       _logController.text += "✅ Connected to WebSocket server\n";
       _scrollToBottom();
       
     } catch (e) {
-      _updateRoomState({
+      _stateManager.updatePluginState("game_room", {
         "isConnected": false,
         "roomId": null,
+        "isLoading": false,
+        "error": e.toString()
       });
       _logController.text += "❌ Error connecting to WebSocket server: $e\n";
       _scrollToBottom();
@@ -247,7 +247,7 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to connect to WebSocket server: ${e.toString()}'),
+            content: Text('Error connecting to WebSocket server: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -301,6 +301,10 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
       _logController.text += "⏳ Creating new room...\n";
       _scrollToBottom();
       
+      // Create a completer to wait for the room_created event
+      _roomCreationCompleter = Completer<bool>();
+      
+      // Send the createRoom request
       final result = await _websocketModule?.createRoom(userId!);
       _log.info("🔍 Create room result: ${result?.isSuccess}");
       
@@ -323,17 +327,18 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
         return;
       }
 
-      // Update state with room data from the result
-      _updateRoomState(<String, dynamic>{
-        "roomId": result.data?['room_id'],
-        "isConnected": true,
-        "roomState": <String, dynamic>{
-          "current_size": result.data?['current_size'] ?? 1,
-          "max_size": result.data?['max_size'] ?? 2,
-        },
-        "isLoading": false,
-        "error": null,
-      });
+      // Wait for the room_created event with a timeout
+      try {
+        await _roomCreationCompleter?.future.timeout(
+          const Duration(seconds: 5),
+          onTimeout: () {
+            _log.error("❌ Timeout waiting for room_created event");
+            return false;
+          },
+        );
+      } finally {
+        _roomCreationCompleter = null;
+      }
       
       _logController.text += "✅ Room created successfully\n";
       _scrollToBottom();

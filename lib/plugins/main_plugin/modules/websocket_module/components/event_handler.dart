@@ -1,17 +1,24 @@
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'dart:async';
 import '../../../../../../tools/logging/logger.dart';
+import '../../../../../../core/managers/state_manager.dart';
+import 'websocket_state.dart';
 
 class EventHandler {
   static final Logger _log = Logger();
   final StreamController<Map<String, dynamic>> _eventStreamController = StreamController<Map<String, dynamic>>.broadcast();
   final Map<String, Function(Map<String, dynamic>)> _eventHandlers = {};
   IO.Socket? _socket;
+  late StateManager _stateManager;
 
   Stream<Map<String, dynamic>> get eventStream => _eventStreamController.stream;
 
   void setSocket(IO.Socket socket) {
     _socket = socket;
+  }
+
+  void setStateManager(StateManager stateManager) {
+    _stateManager = stateManager;
   }
 
   void registerHandler(String event, Function(Map<String, dynamic>) handler) {
@@ -95,6 +102,66 @@ class EventHandler {
       ...data
     };
 
+    // Update state based on event
+    switch (event) {
+      case 'connect':
+        _updateState({
+          'isConnected': true,
+          'sessionId': _socket?.id,
+          'connectionTime': DateTime.now().toIso8601String(),
+          'error': null
+        });
+        break;
+      case 'disconnect':
+        _updateState({
+          'isConnected': false,
+          'sessionId': null,
+          'currentRoomId': null,
+          'roomState': null,
+          'error': null
+        });
+        break;
+      case 'room_joined':
+        final currentState = _stateManager.getPluginState<Map<String, dynamic>>("websocket") ?? {};
+        final joinedRooms = List<String>.from(currentState['joinedRooms'] ?? []);
+        joinedRooms.add(data['room_id']);
+        
+        _updateState({
+          'currentRoomId': data['room_id'],
+          'roomState': data['room_state'],
+          'joinedRooms': joinedRooms,
+          'error': null
+        });
+        break;
+      case 'room_left':
+        final currentState = _stateManager.getPluginState<Map<String, dynamic>>("websocket") ?? {};
+        final joinedRooms = List<String>.from(currentState['joinedRooms'] ?? []);
+        joinedRooms.remove(data['room_id']);
+        
+        _updateState({
+          'currentRoomId': null,
+          'roomState': null,
+          'joinedRooms': joinedRooms,
+          'error': null
+        });
+        break;
+      case 'session_update':
+        _updateState({
+          'sessionData': data['session_data'],
+          'userId': data['user_id'],
+          'username': data['username'],
+          'lastActivity': DateTime.now().toIso8601String(),
+          'error': null
+        });
+        break;
+      case 'error':
+        _updateState({
+          'error': data['error'],
+          'isLoading': false
+        });
+        break;
+    }
+
     // Call registered handler if exists
     final handler = _eventHandlers[event];
     if (handler != null) {
@@ -103,6 +170,11 @@ class EventHandler {
 
     // Broadcast event to stream
     _eventStreamController.add(eventData);
+  }
+
+  void _updateState(Map<String, dynamic> newState) {
+    final currentState = _stateManager.getPluginState<Map<String, dynamic>>("websocket") ?? {};
+    _stateManager.updatePluginState("websocket", {...currentState, ...newState});
   }
 
   void dispose() {

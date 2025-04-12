@@ -19,11 +19,13 @@ import 'components/event_handler.dart';
 import 'components/result_handler.dart';
 import 'components/broadcast_manager.dart';
 import 'components/message_manager.dart';
+import 'components/websocket_state.dart';
 
 class WebSocketModule extends ModuleBase {
   static final Logger _log = Logger();
   late ModuleManager _moduleManager;
   late ServicesManager _servicesManager;
+  late StateManager _stateManager;
   SharedPrefManager? _sharedPref;
   ConnectionsApiModule? _connectionModule;
   BuildContext? _currentContext;
@@ -56,9 +58,29 @@ class WebSocketModule extends ModuleBase {
   void _initDependencies(BuildContext context) {
     _moduleManager = Provider.of<ModuleManager>(context, listen: false);
     _servicesManager = Provider.of<ServicesManager>(context, listen: false);
+    _stateManager = Provider.of<StateManager>(context, listen: false);
     _sharedPref = _servicesManager.getService<SharedPrefManager>('shared_pref');
     _connectionModule = _moduleManager.getLatestModule<ConnectionsApiModule>();
     _currentContext = context;
+
+    // Pass StateManager to EventHandler
+    _eventHandler.setStateManager(_stateManager);
+
+    // Initialize state in StateManager
+    _stateManager.registerPluginState("websocket", {
+      "isConnected": false,
+      "sessionId": null,
+      "userId": null,
+      "username": null,
+      "currentRoomId": null,
+      "roomState": null,
+      "joinedRooms": [],
+      "sessionData": null,
+      "lastActivity": null,
+      "connectionTime": null,
+      "error": null,
+      "isLoading": false
+    });
 
     // Update TokenManager with the connection module
     _tokenManager = TokenManager(_connectionModule);
@@ -71,26 +93,41 @@ class WebSocketModule extends ModuleBase {
     _eventHandler.setupEventHandlers();
   }
 
-  Future<WebSocketResult> connect(BuildContext context, {String? roomId}) async {
-    _initDependencies(context);
-
-    if (_connectionModule == null) {
-      return _resultHandler.createErrorResult('connect', 'ConnectionsApiModule not available');
+  Future<bool> connect(BuildContext context) async {
+    if (!_mounted) {
+      _log.error('❌ WebSocketModule is not mounted');
+      return false;
     }
-
-    // Get fresh token
-    _log.info("🔑 Getting valid token for WebSocket connection...");
-    String? accessToken = await _tokenManager.getValidToken();
-    if (accessToken == null) {
-      return _resultHandler.createErrorResult('connect', 'No valid access token available');
-    }
-    _log.info("✅ Got valid token for WebSocket connection");
 
     try {
+      // Initialize dependencies if not already done
+      if (_stateManager == null) {
+        _initDependencies(context);
+      }
+
+      // Update loading state
+      _stateManager.updatePluginState("websocket", {"isLoading": true});
+
+      // Get fresh token
+      _log.info("🔑 Getting valid token for WebSocket connection...");
+      String? accessToken = await _tokenManager.getValidToken();
+      if (accessToken == null) {
+        _stateManager.updatePluginState("websocket", {
+          "isLoading": false,
+          "error": "No valid access token available"
+        });
+        return false;
+      }
+      _log.info("✅ Got valid token for WebSocket connection");
+
       // Connect to WebSocket server
       final success = await _socketManager.connect(accessToken);
       if (!success) {
-        return _resultHandler.createErrorResult('connect', 'Connection failed');
+        _stateManager.updatePluginState("websocket", {
+          "isLoading": false,
+          "error": "Connection failed"
+        });
+        return false;
       }
 
       // Wait for session ID to be available
@@ -103,28 +140,32 @@ class WebSocketModule extends ModuleBase {
       if (_socketManager.socket?.id == null) {
         _log.error("❌ Failed to get session ID after connection");
         await disconnect();
-        return _resultHandler.createErrorResult('connect', 'Failed to get session ID');
-      }
-
-      // Join room if specified
-      if (roomId != null) {
-        final joinResult = await _roomManager.joinRoom(roomId);
-        if (!joinResult.isSuccess) {
-          return joinResult;
-        }
+        _stateManager.updatePluginState("websocket", {
+          "isLoading": false,
+          "error": "Failed to get session ID"
+        });
+        return false;
       }
 
       // Start token refresh timer
       _tokenManager.startTokenRefreshTimer();
       
-      return _resultHandler.createSuccessResult('connect', data: {
-        'session_id': _socketManager.socket?.id,
-        'connected': _socketManager.isConnected
+      // Update state with successful connection
+      _stateManager.updatePluginState("websocket", {
+        "isLoading": false,
+        "error": null,
+        "sessionId": _socketManager.socket?.id,
+        "isConnected": true
       });
+      
+      return true;
     } catch (e) {
-      _log.error("❌ WebSocket connection error: $e");
-      await disconnect();
-      return _resultHandler.createUnknownErrorResult('connect', e.toString());
+      _log.error('❌ Error connecting to WebSocket: $e');
+      _stateManager.updatePluginState("websocket", {
+        "isLoading": false,
+        "error": e.toString()
+      });
+      return false;
     }
   }
 
@@ -146,9 +187,22 @@ class WebSocketModule extends ModuleBase {
       _roomManager.clearRooms();
       _currentContext = null;
       
+      // Update state
+      _stateManager.updatePluginState("websocket", {
+        "isConnected": false,
+        "sessionId": null,
+        "currentRoomId": null,
+        "roomState": null,
+        "joinedRooms": [],
+        "error": null
+      });
+      
       _log.info("✅ WebSocket disconnected and cleaned up");
     } catch (e) {
       _log.error("❌ Error during disconnect: $e");
+      _stateManager.updatePluginState("websocket", {
+        "error": e.toString()
+      });
     }
   }
 
