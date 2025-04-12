@@ -25,6 +25,12 @@ class GameControls extends StatelessWidget {
         final roomState = stateManager.getPluginState<Map<String, dynamic>>("game_room") ?? {};
         final isLoading = roomState["isLoading"] ?? false;
         final error = roomState["error"];
+        final isInRoom = currentRoomId != null;
+
+        // Don't show controls if we're in a room
+        if (isInRoom) {
+          return const SizedBox.shrink();
+        }
 
         return Card(
           margin: const EdgeInsets.all(8.0),
@@ -87,14 +93,6 @@ class GameControls extends StatelessWidget {
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: Colors.red,
                     ),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-                if (currentRoomId != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    'Current Room: $currentRoomId',
-                    style: Theme.of(context).textTheme.bodyMedium,
                     textAlign: TextAlign.center,
                   ),
                 ],

@@ -29,14 +29,16 @@ class ConnectionStatus extends StatelessWidget {
                   color: isConnected ? Colors.green : Colors.red,
                 ),
                 const SizedBox(width: 8),
-                Text(
-                  isConnected ? 'Connected' : 'Disconnected',
-                  style: TextStyle(
-                    color: isConnected ? Colors.green : Colors.red,
-                    fontWeight: FontWeight.bold,
+                Expanded(
+                  child: Text(
+                    isConnected ? 'Connected' : 'Disconnected',
+                    style: TextStyle(
+                      color: isConnected ? Colors.green : Colors.red,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
-                const Spacer(),
+                const SizedBox(width: 8),
                 if (isConnected)
                   ElevatedButton.icon(
                     onPressed: onDisconnect,
@@ -65,9 +67,12 @@ class ConnectionStatus extends StatelessWidget {
                 children: [
                   const Icon(Icons.meeting_room),
                   const SizedBox(width: 8),
-                  Text(
-                    'Current Room: $currentRoomId',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  Expanded(
+                    child: Text(
+                      'Current Room: $currentRoomId',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ],
               ),
