@@ -16,6 +16,22 @@ class SessionManager {
     _log.info("✅ Session data cleared");
   }
 
+  void setUserId(String userId) {
+    if (_sessionData == null) {
+      _sessionData = <String, dynamic>{};
+    }
+    _sessionData!['user_id'] = userId;
+    _log.info("✅ User ID set to: $userId");
+  }
+
+  void setUsername(String? username) {
+    if (_sessionData == null) {
+      _sessionData = <String, dynamic>{};
+    }
+    _sessionData!['username'] = username;
+    _log.info("✅ Username set to: $username");
+  }
+
   bool isInRoom(String roomId) {
     if (_sessionData == null) return false;
     final rooms = _sessionData!['rooms'] as List?;

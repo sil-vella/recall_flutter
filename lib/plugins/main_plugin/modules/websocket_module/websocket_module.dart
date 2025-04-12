@@ -25,7 +25,7 @@ class WebSocketModule extends ModuleBase {
   static final Logger _log = Logger();
   late ModuleManager _moduleManager;
   late ServicesManager _servicesManager;
-  late StateManager _stateManager;
+  StateManager? _stateManager;
   SharedPrefManager? _sharedPref;
   ConnectionsApiModule? _connectionModule;
   BuildContext? _currentContext;
@@ -56,34 +56,43 @@ class WebSocketModule extends ModuleBase {
   }
 
   void _initDependencies(BuildContext context) {
-    _moduleManager = Provider.of<ModuleManager>(context, listen: false);
-    _servicesManager = Provider.of<ServicesManager>(context, listen: false);
-    _stateManager = Provider.of<StateManager>(context, listen: false);
-    _sharedPref = _servicesManager.getService<SharedPrefManager>('shared_pref');
-    _connectionModule = _moduleManager.getLatestModule<ConnectionsApiModule>();
-    _currentContext = context;
+    try {
+      _moduleManager = Provider.of<ModuleManager>(context, listen: false);
+      _servicesManager = Provider.of<ServicesManager>(context, listen: false);
+      _stateManager = Provider.of<StateManager>(context, listen: false);
+      _sharedPref = _servicesManager.getService<SharedPrefManager>('shared_pref');
+      _connectionModule = _moduleManager.getLatestModule<ConnectionsApiModule>();
+      _currentContext = context;
 
-    // Pass StateManager to EventHandler
-    _eventHandler.setStateManager(_stateManager);
+      if (_stateManager == null) {
+        _log.error("❌ StateManager not available");
+        return;
+      }
 
-    // Initialize state in StateManager
-    _stateManager.registerPluginState("websocket", {
-      "isConnected": false,
-      "sessionId": null,
-      "userId": null,
-      "username": null,
-      "currentRoomId": null,
-      "roomState": null,
-      "joinedRooms": [],
-      "sessionData": null,
-      "lastActivity": null,
-      "connectionTime": null,
-      "error": null,
-      "isLoading": false
-    });
+      // Pass StateManager to EventHandler
+      _eventHandler.setStateManager(_stateManager!);
 
-    // Update TokenManager with the connection module
-    _tokenManager = TokenManager(_connectionModule);
+      // Initialize state in StateManager
+      _stateManager!.registerPluginState("websocket", <String, dynamic>{
+        "isConnected": false,
+        "sessionId": null,
+        "userId": null,
+        "username": null,
+        "currentRoomId": null,
+        "roomState": null,
+        "joinedRooms": [],
+        "sessionData": null,
+        "lastActivity": null,
+        "connectionTime": null,
+        "error": null,
+        "isLoading": false
+      });
+
+      // Update TokenManager with the connection module
+      _tokenManager = TokenManager(_connectionModule);
+    } catch (e) {
+      _log.error("❌ Error initializing dependencies: $e");
+    }
   }
 
   void _setupEventHandlers(IO.Socket socket) {
@@ -105,14 +114,19 @@ class WebSocketModule extends ModuleBase {
         _initDependencies(context);
       }
 
+      if (_stateManager == null) {
+        _log.error("❌ StateManager not available after initialization");
+        return false;
+      }
+
       // Update loading state
-      _stateManager.updatePluginState("websocket", {"isLoading": true});
+      _stateManager!.updatePluginState("websocket", <String, dynamic>{"isLoading": true});
 
       // Get fresh token
       _log.info("🔑 Getting valid token for WebSocket connection...");
       String? accessToken = await _tokenManager.getValidToken();
       if (accessToken == null) {
-        _stateManager.updatePluginState("websocket", {
+        _stateManager!.updatePluginState("websocket", <String, dynamic>{
           "isLoading": false,
           "error": "No valid access token available"
         });
@@ -123,7 +137,7 @@ class WebSocketModule extends ModuleBase {
       // Connect to WebSocket server
       final success = await _socketManager.connect(accessToken);
       if (!success) {
-        _stateManager.updatePluginState("websocket", {
+        _stateManager!.updatePluginState("websocket", <String, dynamic>{
           "isLoading": false,
           "error": "Connection failed"
         });
@@ -140,18 +154,47 @@ class WebSocketModule extends ModuleBase {
       if (_socketManager.socket?.id == null) {
         _log.error("❌ Failed to get session ID after connection");
         await disconnect();
-        _stateManager.updatePluginState("websocket", {
+        _stateManager!.updatePluginState("websocket", <String, dynamic>{
           "isLoading": false,
           "error": "Failed to get session ID"
         });
         return false;
       }
 
+      // Get user info from login module
+      final loginModule = _moduleManager.getLatestModule<LoginModule>();
+      if (loginModule != null) {
+        final userStatus = await loginModule.getUserStatus(context);
+        if (userStatus["status"] == "logged_in" && userStatus["user_id"] != null) {
+          _sessionManager.setUserId(userStatus["user_id"].toString());
+          _sessionManager.setUsername(userStatus["username"]?.toString());
+          
+          // Update both websocket and game room states
+          _stateManager!.updatePluginState("websocket", <String, dynamic>{
+            "userId": userStatus["user_id"].toString(),
+            "username": userStatus["username"]?.toString(),
+            "sessionData": userStatus,
+            "lastActivity": DateTime.now().toIso8601String(),
+            "connectionTime": DateTime.now().toIso8601String(),
+          });
+
+          // Also update game room state if it exists
+          final gameRoomState = _stateManager!.getPluginState<Map<String, dynamic>>("game_room");
+          if (gameRoomState != null) {
+            _stateManager!.updatePluginState("game_room", <String, dynamic>{
+              ...gameRoomState,
+              "userId": userStatus["user_id"].toString(),
+              "isConnected": true,
+            });
+          }
+        }
+      }
+
       // Start token refresh timer
       _tokenManager.startTokenRefreshTimer();
       
       // Update state with successful connection
-      _stateManager.updatePluginState("websocket", {
+      _stateManager!.updatePluginState("websocket", <String, dynamic>{
         "isLoading": false,
         "error": null,
         "sessionId": _socketManager.socket?.id,
@@ -161,10 +204,12 @@ class WebSocketModule extends ModuleBase {
       return true;
     } catch (e) {
       _log.error('❌ Error connecting to WebSocket: $e');
-      _stateManager.updatePluginState("websocket", {
-        "isLoading": false,
-        "error": e.toString()
-      });
+      if (_stateManager != null) {
+        _stateManager!.updatePluginState("websocket", <String, dynamic>{
+          "isLoading": false,
+          "error": e.toString()
+        });
+      }
       return false;
     }
   }
@@ -187,22 +232,39 @@ class WebSocketModule extends ModuleBase {
       _roomManager.clearRooms();
       _currentContext = null;
       
-      // Update state
-      _stateManager.updatePluginState("websocket", {
-        "isConnected": false,
-        "sessionId": null,
-        "currentRoomId": null,
-        "roomState": null,
-        "joinedRooms": [],
-        "error": null
-      });
+      // Update state if available
+      if (_stateManager != null) {
+        // Update websocket state
+        _stateManager!.updatePluginState("websocket", <String, dynamic>{
+          "isConnected": false,
+          "sessionId": null,
+          "currentRoomId": null,
+          "roomState": null,
+          "joinedRooms": [],
+          "error": null
+        });
+
+        // Also update game room state if it exists
+        final gameRoomState = _stateManager!.getPluginState<Map<String, dynamic>>("game_room");
+        if (gameRoomState != null) {
+          _stateManager!.updatePluginState("game_room", <String, dynamic>{
+            ...gameRoomState,
+            "isConnected": false,
+            "roomId": null,
+            "roomState": null,
+            "error": null
+          });
+        }
+      }
       
       _log.info("✅ WebSocket disconnected and cleaned up");
     } catch (e) {
       _log.error("❌ Error during disconnect: $e");
-      _stateManager.updatePluginState("websocket", {
-        "error": e.toString()
-      });
+      if (_stateManager != null) {
+        _stateManager!.updatePluginState("websocket", <String, dynamic>{
+          "error": e.toString()
+        });
+      }
     }
   }
 

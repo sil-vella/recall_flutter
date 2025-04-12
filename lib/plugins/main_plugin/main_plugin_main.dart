@@ -6,6 +6,7 @@ import 'package:recall/plugins/main_plugin/modules/main_helper_module/main_helpe
 import 'package:recall/plugins/main_plugin/screens/account_screen/account_screen.dart';
 import 'package:recall/plugins/main_plugin/screens/home_screen.dart';
 import 'package:recall/plugins/main_plugin/screens/preferences_screen/preferences_screen.dart';
+import 'package:recall/plugins/main_plugin/screens/state_debug_screen.dart';
 import 'package:recall/plugins/main_plugin/modules/websocket_module/websocket_module.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -74,6 +75,13 @@ class MainPlugin extends PluginBase {
       drawerTitle: 'Account', // ✅ Add to drawer
       drawerIcon: Icons.settings, // ✅ Assign an icon
       drawerPosition: 5,
+    );
+    navigationManager.registerRoute(
+      path: '/state-debug',
+      screen: (context) => const StateDebugScreen(),
+      drawerTitle: 'State Debug', // ✅ Add to drawer
+      drawerIcon: Icons.bug_report, // ✅ Assign an icon
+      drawerPosition: 6,
     );
   }
 

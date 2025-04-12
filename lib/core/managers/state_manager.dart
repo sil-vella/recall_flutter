@@ -111,6 +111,33 @@ class StateManager with ChangeNotifier {
     }
   }
 
+  /// Returns a map of all registered plugin states
+  Map<String, Map<String, dynamic>> getAllPluginStates() {
+    return _pluginStates.map((key, value) => MapEntry(key, value.state));
+  }
+
+  /// Returns a map of all registered states including main app state
+  Map<String, dynamic> getAllStates() {
+    return {
+      'plugin_states': getAllPluginStates(),
+      'main_app_state': _mainAppState,
+    };
+  }
+
+  /// Returns a list of all registered plugin keys
+  List<String> getRegisteredPluginKeys() {
+    return _pluginStates.keys.toList();
+  }
+
+  /// Returns the number of registered plugin states
+  int getPluginStateCount() {
+    return _pluginStates.length;
+  }
+
+  /// Returns true if any plugin state is registered
+  bool hasPluginStates() {
+    return _pluginStates.isNotEmpty;
+  }
 
   // ------ Main App State Methods ------
 

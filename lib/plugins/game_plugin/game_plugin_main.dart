@@ -29,10 +29,12 @@ class GamePlugin extends PluginBase {
     final stateManager = Provider.of<StateManager>(context, listen: false);
     navigationManager = Provider.of<NavigationManager>(context, listen: false);
 
-    _initializeUserData(context); // ✅ Initialize user data
+    // Initialize states before any other operations
+    _initializeStates(stateManager);
+    _initializeUserData(context);
     _registerNavigation();
 
-    // ✅ Register all game-related modules in ModuleManager
+    // Register all game-related modules in ModuleManager
     final modules = createModules();
     for (var entry in modules.entries) {
       final instanceKey = entry.key;
@@ -40,35 +42,46 @@ class GamePlugin extends PluginBase {
       moduleManager.registerModule(module, instanceKey: instanceKey);
     }
 
-    // ✅ Initialize game states in StateManager
-    stateManager.registerPluginState("game_room", {
-      "roomId": null,
-      "isConnected": false,
-      "roomState": null,
-      "userId": null,
-      "joinLink": null,
-      "isLoading": false,
-      "error": null
-    });
-
-    stateManager.registerPluginState("game_timer", {
-      "isRunning": false,
-      "duration": 30,
-    });
-
-    stateManager.registerPluginState("game_round", {
-      "roundNumber": 0,
-      "hint": false,
-      "imagesLoaded": false,
-      "factLoaded": false,
-    });
-
-    // ✅ Check if WebSocketModule is available
+    // Check if WebSocketModule is available
     final websocketModule = moduleManager.getLatestModule<WebSocketModule>();
     if (websocketModule == null) {
       Logger().error('❌ WebSocketModule not found in ModuleManager. Game functionality may be limited.');
     } else {
       Logger().info('✅ Found WebSocketModule instance. Game functionality is available.');
+    }
+  }
+
+  /// Initialize all plugin states
+  void _initializeStates(StateManager stateManager) {
+    // Initialize game room state
+    if (stateManager.getPluginState<Map<String, dynamic>>("game_room") == null) {
+      stateManager.registerPluginState("game_room", <String, dynamic>{
+        "roomId": null,
+        "isConnected": false,
+        "roomState": null,
+        "userId": null,
+        "joinLink": null,
+        "isLoading": false,
+        "error": null
+      });
+    }
+
+    // Initialize game timer state
+    if (stateManager.getPluginState<Map<String, dynamic>>("game_timer") == null) {
+      stateManager.registerPluginState("game_timer", <String, dynamic>{
+        "isRunning": false,
+        "duration": 30,
+      });
+    }
+
+    // Initialize game round state
+    if (stateManager.getPluginState<Map<String, dynamic>>("game_round") == null) {
+      stateManager.registerPluginState("game_round", <String, dynamic>{
+        "roundNumber": 0,
+        "hint": false,
+        "imagesLoaded": false,
+        "factLoaded": false,
+      });
     }
   }
 
@@ -175,8 +188,10 @@ class GamePlugin extends PluginBase {
 
   /// Update room state
   void updateRoomState(BuildContext context, Map<String, dynamic> state) {
+    if (!context.mounted) return;
     final stateManager = Provider.of<StateManager>(context, listen: false);
-    stateManager.updatePluginState("game_room", state);
+    final currentState = stateManager.getPluginState<Map<String, dynamic>>("game_room") ?? {};
+    stateManager.updatePluginState("game_room", <String, dynamic>{...currentState, ...state});
   }
 
   /// Get current room state

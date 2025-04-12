@@ -28,7 +28,7 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
   static final Logger _log = Logger();
   late ModuleManager _moduleManager;
   late ServicesManager _servicesManager;
-  late StateManager _stateManager;
+  StateManager? _stateManager;
   WebSocketModule? _websocketModule;
   LoginModule? _loginModule;
   
@@ -45,33 +45,70 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
     super.initState();
     _initDependencies();
     _setupWebSocketListeners();
-    _getUserId();
+    // Move _getUserId to after frame is built
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _getUserId();
+    });
   }
 
   void _initDependencies() {
-    _moduleManager = Provider.of<ModuleManager>(context, listen: false);
-    _servicesManager = Provider.of<ServicesManager>(context, listen: false);
-    _stateManager = Provider.of<StateManager>(context, listen: false);
-    _websocketModule = _moduleManager.getLatestModule<WebSocketModule>();
-    _loginModule = _moduleManager.getLatestModule<LoginModule>();
+    try {
+      _moduleManager = Provider.of<ModuleManager>(context, listen: false);
+      _servicesManager = Provider.of<ServicesManager>(context, listen: false);
+      _stateManager = Provider.of<StateManager>(context, listen: false);
+      _websocketModule = _moduleManager.getLatestModule<WebSocketModule>();
+      _loginModule = _moduleManager.getLatestModule<LoginModule>();
+
+      if (_stateManager == null) {
+        _log.error("❌ StateManager not available");
+        _logController.text += "❌ Error: State manager not available\n";
+        _scrollToBottom();
+      }
+    } catch (e) {
+      _log.error("❌ Error initializing dependencies: $e");
+      _logController.text += "❌ Error initializing dependencies: $e\n";
+      _scrollToBottom();
+    }
   }
 
   void _updateRoomState(Map<String, dynamic> newState) {
-    final currentState = _stateManager.getPluginState<Map<String, dynamic>>("game_room") ?? {};
-    _stateManager.updatePluginState("game_room", {...currentState, ...newState});
+    if (!mounted || _stateManager == null) return;
+    try {
+      final currentState = _stateManager!.getPluginState<Map<String, dynamic>>("game_room") ?? {};
+      _stateManager!.updatePluginState("game_room", <String, dynamic>{...currentState, ...newState});
+    } catch (e) {
+      _log.error("❌ Error updating room state: $e");
+      _logController.text += "❌ Error updating room state: $e\n";
+      _scrollToBottom();
+    }
   }
 
-  Map<String, dynamic> get roomState => 
-      _stateManager.getPluginState<Map<String, dynamic>>("game_room") ?? {};
+  Map<String, dynamic> get roomState {
+    if (_stateManager == null) return {};
+    try {
+      return _stateManager!.getPluginState<Map<String, dynamic>>("game_room") ?? {};
+    } catch (e) {
+      _log.error("❌ Error getting room state: $e");
+      return {};
+    }
+  }
 
   String? get currentRoomId => roomState["roomId"];
   bool get isConnected => roomState["isConnected"] ?? false;
   String? get userId => roomState["userId"];
-  String? get joinLink => currentRoomId != null 
-      ? '${_servicesManager.getService<SharedPrefManager>('shared_pref')?.get('base_url')}/game/join/$currentRoomId' 
-      : null;
+  String? get joinLink {
+    if (currentRoomId == null || _servicesManager == null) return null;
+    try {
+      return '${_servicesManager.getService<SharedPrefManager>('shared_pref')?.get('base_url')}/game/join/$currentRoomId';
+    } catch (e) {
+      _log.error("❌ Error getting join link: $e");
+      return null;
+    }
+  }
 
   Future<void> _getUserId() async {
+    if (!mounted) return;
+    
     try {
       if (_loginModule == null) {
         _log.error("❌ LoginModule not available");
@@ -101,7 +138,7 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
         return;
       }
 
-      _updateRoomState({"userId": userId.toString()});
+      _updateRoomState(<String, dynamic>{"userId": userId.toString()});
       _logController.text += "✅ User ID retrieved: $userId\n";
       _scrollToBottom();
     } catch (e) {
@@ -112,77 +149,90 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
   }
 
   void _setupWebSocketListeners() {
-    _websocketModule?.eventStream.listen((event) {
-      if (!mounted) return;
+    if (_websocketModule == null || _stateManager == null) {
+      _log.error("❌ WebSocket module or state manager not available");
+      _logController.text += "❌ Error: WebSocket module or state manager not available\n";
+      _scrollToBottom();
+      return;
+    }
 
-      switch (event['type']) {
-        case 'room_joined':
-          _stateManager.updatePluginState("game_room", <String, dynamic>{
-            "roomId": event['data']['room_id'],
-            "isConnected": true,
-            "roomState": <String, dynamic>{
-              "current_size": event['data']['current_size'],
-              "max_size": event['data']['max_size'],
-            },
-            "isLoading": false,
-            "error": null,
-          });
-          _logController.text += "✅ Successfully joined room: ${event['data']['room_id']}\n";
-          _scrollToBottom();
-          _roomJoinCompleter?.complete(true);
-          _roomJoinCompleter = null;
-          break;
-        case 'room_created':
-          _log.info("📨 Received room_created event: ${event['data']}");
-          _stateManager.updatePluginState("game_room", <String, dynamic>{
-            "roomId": event['data']['room_id'],
-            "isConnected": true,
-            "roomState": <String, dynamic>{
-              "current_size": event['data']['current_size'],
-              "max_size": event['data']['max_size'],
-              "owner_id": event['data']['owner_id'],
-              "owner_username": event['data']['owner_username'],
-              "permission": event['data']['permission'],
-              "allowed_users": event['data']['allowed_users'],
-              "allowed_roles": event['data']['allowed_roles'],
-              "join_link": event['data']['join_link'],
-            },
-            "joinLink": event['data']['join_link'],
-            "isLoading": false,
-            "error": null,
-          });
-          _log.info("✅ Updated state for 'game_room': ${_stateManager.getPluginState<Map<String, dynamic>>("game_room")}");
-          _logController.text += "✅ Room created: ${event['data']['room_id']}\n";
-          _scrollToBottom();
-          _roomCreationCompleter?.complete(true);
-          _roomCreationCompleter = null;
-          break;
-        case 'room_state':
-          final currentState = _stateManager.getPluginState<Map<String, dynamic>>("game_room") ?? {};
-          _stateManager.updatePluginState("game_room", <String, dynamic>{
-            ...currentState,
-            "roomState": <String, dynamic>{
-              ...currentState["roomState"] ?? {},
-              ...event['data'],
-            },
-          });
-          _logController.text += "📊 Room state updated\n";
-          _scrollToBottom();
-          break;
-        case 'error':
-          if (event['data']['message']?.contains('Failed to join room') == true) {
-            _stateManager.updatePluginState("game_room", <String, dynamic>{
-              "roomId": null,
-              "roomState": null,
+    _websocketModule!.eventStream.listen((event) {
+      if (!mounted || _stateManager == null) return;
+
+      try {
+        switch (event['type']) {
+          case 'room_joined':
+            _stateManager!.updatePluginState("game_room", <String, dynamic>{
+              "roomId": event['data']['room_id'],
+              "isConnected": true,
+              "roomState": <String, dynamic>{
+                "current_size": event['data']['current_size'],
+                "max_size": event['data']['max_size'],
+              },
               "isLoading": false,
-              "error": event['data']['message'],
+              "error": null,
             });
-            _roomJoinCompleter?.complete(false);
+            _logController.text += "✅ Successfully joined room: ${event['data']['room_id']}\n";
+            _scrollToBottom();
+            _roomJoinCompleter?.complete(true);
             _roomJoinCompleter = null;
-          }
-          _logController.text += "❌ Error: ${event['data']['message']}\n";
-          _scrollToBottom();
-          break;
+            break;
+          case 'room_created':
+            _log.info("📨 Received room_created event: ${event['data']}");
+            _stateManager!.updatePluginState("game_room", <String, dynamic>{
+              "roomId": event['data']['room_id'],
+              "isConnected": true,
+              "roomState": <String, dynamic>{
+                "current_size": event['data']['current_size'],
+                "max_size": event['data']['max_size'],
+                "owner_id": event['data']['owner_id'],
+                "owner_username": event['data']['owner_username'],
+                "permission": event['data']['permission'],
+                "allowed_users": event['data']['allowed_users'],
+                "allowed_roles": event['data']['allowed_roles'],
+                "join_link": event['data']['join_link'],
+              },
+              "joinLink": event['data']['join_link'],
+              "isLoading": false,
+              "error": null,
+            });
+            _log.info("✅ Updated state for 'game_room': ${_stateManager!.getPluginState<Map<String, dynamic>>("game_room")}");
+            _logController.text += "✅ Room created: ${event['data']['room_id']}\n";
+            _scrollToBottom();
+            _roomCreationCompleter?.complete(true);
+            _roomCreationCompleter = null;
+            break;
+          case 'room_state':
+            final currentState = _stateManager!.getPluginState<Map<String, dynamic>>("game_room") ?? {};
+            _stateManager!.updatePluginState("game_room", <String, dynamic>{
+              ...currentState,
+              "roomState": <String, dynamic>{
+                ...currentState["roomState"] ?? {},
+                ...event['data'],
+              },
+            });
+            _logController.text += "📊 Room state updated\n";
+            _scrollToBottom();
+            break;
+          case 'error':
+            if (event['data']['message']?.contains('Failed to join room') == true) {
+              _stateManager!.updatePluginState("game_room", <String, dynamic>{
+                "roomId": null,
+                "roomState": null,
+                "isLoading": false,
+                "error": event['data']['message'],
+              });
+              _roomJoinCompleter?.complete(false);
+              _roomJoinCompleter = null;
+            }
+            _logController.text += "❌ Error: ${event['data']['message']}\n";
+            _scrollToBottom();
+            break;
+        }
+      } catch (e) {
+        _log.error("❌ Error handling WebSocket event: $e");
+        _logController.text += "❌ Error handling WebSocket event: $e\n";
+        _scrollToBottom();
       }
     });
   }
@@ -207,7 +257,7 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
       
       final result = await _websocketModule?.connect(context);
       if (result == null || !result) {
-        _stateManager.updatePluginState("game_room", {
+        _stateManager!.updatePluginState("game_room", {
           "isConnected": false,
           "roomId": null,
           "isLoading": false,
@@ -226,7 +276,7 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
         return;
       }
       
-      _stateManager.updatePluginState("game_room", {
+      _stateManager!.updatePluginState("game_room", {
         "isConnected": true,
         "isLoading": false,
         "error": null
@@ -235,7 +285,7 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
       _scrollToBottom();
       
     } catch (e) {
-      _stateManager.updatePluginState("game_room", {
+      _stateManager!.updatePluginState("game_room", {
         "isConnected": false,
         "roomId": null,
         "isLoading": false,
@@ -256,6 +306,8 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
   }
 
   Future<void> _disconnectFromWebSocket() async {
+    if (!mounted || _websocketModule == null) return;
+    
     try {
       _logController.text += "⏳ Disconnecting from WebSocket server...\n";
       _scrollToBottom();
@@ -265,13 +317,34 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
       _updateRoomState({
         "isConnected": false,
         "roomId": null,
+        "roomState": null,
+        "isLoading": false,
+        "error": null
       });
       _logController.text += "✅ Disconnected from WebSocket server\n";
       _scrollToBottom();
       
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Disconnected from WebSocket server'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
     } catch (e) {
+      _log.error("❌ Error disconnecting from WebSocket server: $e");
       _logController.text += "❌ Error disconnecting from WebSocket server: $e\n";
       _scrollToBottom();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error disconnecting: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -470,11 +543,18 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
   }
 
   @override
+  void deactivate() {
+    _log.info("🔄 Game screen deactivated - maintaining WebSocket connection");
+    super.deactivate();
+  }
+
+  @override
   void dispose() {
+    _log.info("🗑️ Game screen disposed - cleaning up resources");
     _roomController.dispose();
     _logController.dispose();
     _scrollController.dispose();
-    _websocketModule?.disconnect();
+    _disconnectFromWebSocket();
     super.dispose();
   }
 
