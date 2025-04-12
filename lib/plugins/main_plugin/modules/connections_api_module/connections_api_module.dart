@@ -178,6 +178,13 @@ class ConnectionsApiModule extends ModuleBase {
         'refresh_token': refreshToken
       });
       
+      // Check if response is an error
+      if (response is Map && response.containsKey('error')) {
+        _log.error('❌ Token refresh error: ${response['error']}');
+        return null;
+      }
+      
+      // Check if response has access token
       if (response is Map && response.containsKey('access_token')) {
         await updateAuthTokens(
           accessToken: response['access_token'],

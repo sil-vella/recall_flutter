@@ -85,11 +85,13 @@ class WebSocketModule extends ModuleBase {
         "lastActivity": null,
         "connectionTime": null,
         "error": null,
-        "isLoading": false
+        "isLoading": false,
+        "hasValidToken": false
       });
 
       // Update TokenManager with the connection module
       _tokenManager = TokenManager(_connectionModule);
+      _tokenManager.setStateManager(_stateManager!);
     } catch (e) {
       _log.error("❌ Error initializing dependencies: $e");
     }

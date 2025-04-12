@@ -25,6 +25,45 @@ class StateDebugScreenState extends BaseScreenState<StateDebugScreen> {
   void initState() {
     super.initState();
     _log.info("🔄 Initializing StateDebugScreen");
+    
+    // Log initial state after frame is built
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _logState();
+    });
+  }
+
+  void _logState() {
+    final stateManager = Provider.of<StateManager>(context, listen: false);
+    final allStates = stateManager.getAllStates();
+    
+    _log.info("📊 Current State Overview:");
+    _log.info("┌─────────────────────────────────────────────┐");
+    
+    // Log main app state
+    final mainAppState = allStates['main_app_state'] as Map<String, dynamic>;
+    _log.info("│ Main App State:");
+    _logStateMap(mainAppState, "│ ");
+    
+    // Log plugin states
+    final pluginStates = allStates['plugin_states'] as Map<String, Map<String, dynamic>>;
+    _log.info("│ Plugin States:");
+    pluginStates.forEach((pluginName, state) {
+      _log.info("│ ┌─ $pluginName");
+      _logStateMap(state, "│ │ ");
+    });
+    
+    _log.info("└─────────────────────────────────────────────┘");
+  }
+
+  void _logStateMap(Map<dynamic, dynamic> state, String prefix) {
+    state.forEach((key, value) {
+      if (value is Map) {
+        _log.info("$prefix├─ $key:");
+        _logStateMap(value, "$prefix│  ");
+      } else {
+        _log.info("$prefix├─ $key: $value");
+      }
+    });
   }
 
   @override
@@ -132,6 +171,7 @@ class StateDebugScreenState extends BaseScreenState<StateDebugScreen> {
       color: Colors.white,
       child: RefreshIndicator(
         onRefresh: () async {
+          _logState();
           setState(() {});
         },
         child: ListView(

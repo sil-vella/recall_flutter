@@ -7,6 +7,7 @@ import '../../../../../core/00_base/screen_base.dart';
 import '../../../../../core/managers/navigation_manager.dart';
 import '../../../../../core/managers/state_manager.dart';
 import '../../../../../core/services/shared_preferences.dart';
+import '../../../../../utils/consts/theme_consts.dart';
 import '../../../main_plugin/modules/websocket_module/components/result_handler.dart';
 import '../../../main_plugin/modules/websocket_module/websocket_module.dart';
 import '../../../main_plugin/modules/login_module/login_module.dart';
@@ -28,7 +29,6 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
   static final Logger _log = Logger();
   late ModuleManager _moduleManager;
   late ServicesManager _servicesManager;
-  StateManager? _stateManager;
   WebSocketModule? _websocketModule;
   LoginModule? _loginModule;
   
@@ -36,7 +36,6 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
   final TextEditingController _logController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   
-  // Add completers for room operations
   Completer<bool>? _roomCreationCompleter;
   Completer<bool>? _roomJoinCompleter;
 
@@ -45,7 +44,6 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
     super.initState();
     _initDependencies();
     _setupWebSocketListeners();
-    // Move _getUserId to after frame is built
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _getUserId();
     });
@@ -55,15 +53,8 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
     try {
       _moduleManager = Provider.of<ModuleManager>(context, listen: false);
       _servicesManager = Provider.of<ServicesManager>(context, listen: false);
-      _stateManager = Provider.of<StateManager>(context, listen: false);
       _websocketModule = _moduleManager.getLatestModule<WebSocketModule>();
       _loginModule = _moduleManager.getLatestModule<LoginModule>();
-
-      if (_stateManager == null) {
-        _log.error("❌ StateManager not available");
-        _logController.text += "❌ Error: State manager not available\n";
-        _scrollToBottom();
-      }
     } catch (e) {
       _log.error("❌ Error initializing dependencies: $e");
       _logController.text += "❌ Error initializing dependencies: $e\n";
@@ -71,39 +62,93 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
     }
   }
 
-  void _updateRoomState(Map<String, dynamic> newState) {
-    if (!mounted || _stateManager == null) return;
-    try {
-      final currentState = _stateManager!.getPluginState<Map<String, dynamic>>("game_room") ?? {};
-      _stateManager!.updatePluginState("game_room", <String, dynamic>{...currentState, ...newState});
-    } catch (e) {
-      _log.error("❌ Error updating room state: $e");
-      _logController.text += "❌ Error updating room state: $e\n";
+  void _setupWebSocketListeners() {
+    if (_websocketModule == null) {
+      _log.error("❌ WebSocket module not available");
+      _logController.text += "❌ Error: WebSocket module not available\n";
       _scrollToBottom();
+      return;
     }
-  }
 
-  Map<String, dynamic> get roomState {
-    if (_stateManager == null) return {};
-    try {
-      return _stateManager!.getPluginState<Map<String, dynamic>>("game_room") ?? {};
-    } catch (e) {
-      _log.error("❌ Error getting room state: $e");
-      return {};
-    }
-  }
+    _websocketModule!.eventStream.listen((event) {
+      if (!mounted) return;
 
-  String? get currentRoomId => roomState["roomId"];
-  bool get isConnected => roomState["isConnected"] ?? false;
-  String? get userId => roomState["userId"];
-  String? get joinLink {
-    if (currentRoomId == null || _servicesManager == null) return null;
-    try {
-      return '${_servicesManager.getService<SharedPrefManager>('shared_pref')?.get('base_url')}/game/join/$currentRoomId';
-    } catch (e) {
-      _log.error("❌ Error getting join link: $e");
-      return null;
-    }
+      try {
+        final stateManager = Provider.of<StateManager>(context, listen: false);
+        switch (event['type']) {
+          case 'room_joined':
+            stateManager.updatePluginState("game_room", <String, dynamic>{
+              "roomId": event['data']['room_id'],
+              "isConnected": true,
+              "roomState": <String, dynamic>{
+                "current_size": event['data']['current_size'],
+                "max_size": event['data']['max_size'],
+              },
+              "isLoading": false,
+              "error": null,
+            });
+            _logController.text += "✅ Successfully joined room: ${event['data']['room_id']}\n";
+            _scrollToBottom();
+            _roomJoinCompleter?.complete(true);
+            _roomJoinCompleter = null;
+            break;
+          case 'room_created':
+            _log.info("📨 Received room_created event: ${event['data']}");
+            stateManager.updatePluginState("game_room", <String, dynamic>{
+              "roomId": event['data']['room_id'],
+              "isConnected": true,
+              "roomState": <String, dynamic>{
+                "current_size": event['data']['current_size'],
+                "max_size": event['data']['max_size'],
+                "owner_id": event['data']['owner_id'],
+                "owner_username": event['data']['owner_username'],
+                "permission": event['data']['permission'],
+                "allowed_users": event['data']['allowed_users'],
+                "allowed_roles": event['data']['allowed_roles'],
+                "join_link": event['data']['join_link'],
+              },
+              "joinLink": event['data']['join_link'],
+              "isLoading": false,
+              "error": null,
+            });
+            _logController.text += "✅ Room created: ${event['data']['room_id']}\n";
+            _scrollToBottom();
+            _roomCreationCompleter?.complete(true);
+            _roomCreationCompleter = null;
+            break;
+          case 'room_state':
+            final currentState = stateManager.getPluginState<Map<String, dynamic>>("game_room") ?? {};
+            stateManager.updatePluginState("game_room", <String, dynamic>{
+              ...currentState,
+              "roomState": <String, dynamic>{
+                ...currentState["roomState"] ?? {},
+                ...event['data'],
+              },
+            });
+            _logController.text += "📊 Room state updated\n";
+            _scrollToBottom();
+            break;
+          case 'error':
+            if (event['data']['message']?.contains('Failed to join room') == true) {
+              stateManager.updatePluginState("game_room", <String, dynamic>{
+                "roomId": null,
+                "roomState": null,
+                "isLoading": false,
+                "error": event['data']['message'],
+              });
+              _roomJoinCompleter?.complete(false);
+              _roomJoinCompleter = null;
+            }
+            _logController.text += "❌ Error: ${event['data']['message']}\n";
+            _scrollToBottom();
+            break;
+        }
+      } catch (e) {
+        _log.error("❌ Error handling WebSocket event: $e");
+        _logController.text += "❌ Error handling WebSocket event: $e\n";
+        _scrollToBottom();
+      }
+    });
   }
 
   Future<void> _getUserId() async {
@@ -138,7 +183,8 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
         return;
       }
 
-      _updateRoomState(<String, dynamic>{"userId": userId.toString()});
+      final stateManager = Provider.of<StateManager>(context, listen: false);
+      stateManager.updatePluginState("game_room", <String, dynamic>{"userId": userId.toString()});
       _logController.text += "✅ User ID retrieved: $userId\n";
       _scrollToBottom();
     } catch (e) {
@@ -146,95 +192,6 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
       _logController.text += "❌ Error getting user ID: $e\n";
       _scrollToBottom();
     }
-  }
-
-  void _setupWebSocketListeners() {
-    if (_websocketModule == null || _stateManager == null) {
-      _log.error("❌ WebSocket module or state manager not available");
-      _logController.text += "❌ Error: WebSocket module or state manager not available\n";
-      _scrollToBottom();
-      return;
-    }
-
-    _websocketModule!.eventStream.listen((event) {
-      if (!mounted || _stateManager == null) return;
-
-      try {
-        switch (event['type']) {
-          case 'room_joined':
-            _stateManager!.updatePluginState("game_room", <String, dynamic>{
-              "roomId": event['data']['room_id'],
-              "isConnected": true,
-              "roomState": <String, dynamic>{
-                "current_size": event['data']['current_size'],
-                "max_size": event['data']['max_size'],
-              },
-              "isLoading": false,
-              "error": null,
-            });
-            _logController.text += "✅ Successfully joined room: ${event['data']['room_id']}\n";
-            _scrollToBottom();
-            _roomJoinCompleter?.complete(true);
-            _roomJoinCompleter = null;
-            break;
-          case 'room_created':
-            _log.info("📨 Received room_created event: ${event['data']}");
-            _stateManager!.updatePluginState("game_room", <String, dynamic>{
-              "roomId": event['data']['room_id'],
-              "isConnected": true,
-              "roomState": <String, dynamic>{
-                "current_size": event['data']['current_size'],
-                "max_size": event['data']['max_size'],
-                "owner_id": event['data']['owner_id'],
-                "owner_username": event['data']['owner_username'],
-                "permission": event['data']['permission'],
-                "allowed_users": event['data']['allowed_users'],
-                "allowed_roles": event['data']['allowed_roles'],
-                "join_link": event['data']['join_link'],
-              },
-              "joinLink": event['data']['join_link'],
-              "isLoading": false,
-              "error": null,
-            });
-            _log.info("✅ Updated state for 'game_room': ${_stateManager!.getPluginState<Map<String, dynamic>>("game_room")}");
-            _logController.text += "✅ Room created: ${event['data']['room_id']}\n";
-            _scrollToBottom();
-            _roomCreationCompleter?.complete(true);
-            _roomCreationCompleter = null;
-            break;
-          case 'room_state':
-            final currentState = _stateManager!.getPluginState<Map<String, dynamic>>("game_room") ?? {};
-            _stateManager!.updatePluginState("game_room", <String, dynamic>{
-              ...currentState,
-              "roomState": <String, dynamic>{
-                ...currentState["roomState"] ?? {},
-                ...event['data'],
-              },
-            });
-            _logController.text += "📊 Room state updated\n";
-            _scrollToBottom();
-            break;
-          case 'error':
-            if (event['data']['message']?.contains('Failed to join room') == true) {
-              _stateManager!.updatePluginState("game_room", <String, dynamic>{
-                "roomId": null,
-                "roomState": null,
-                "isLoading": false,
-                "error": event['data']['message'],
-              });
-              _roomJoinCompleter?.complete(false);
-              _roomJoinCompleter = null;
-            }
-            _logController.text += "❌ Error: ${event['data']['message']}\n";
-            _scrollToBottom();
-            break;
-        }
-      } catch (e) {
-        _log.error("❌ Error handling WebSocket event: $e");
-        _logController.text += "❌ Error handling WebSocket event: $e\n";
-        _scrollToBottom();
-      }
-    });
   }
 
   Future<void> _connectToWebSocket() async {
@@ -245,10 +202,10 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
       if (_loginModule != null) {
         final userStatus = await _loginModule!.getUserStatus(context);
         if (userStatus["status"] != "logged_in") {
-          _logController.text += "❌ User is not logged in. Please log in again.\n";
+          _logController.text += "❌ User is not logged in. Please log in to play the game.\n";
           _scrollToBottom();
           if (mounted) {
-            _log.info("🔀 Navigating to account screen due to token expiration");
+            _log.info("🔀 Navigating to account screen due to user not being logged in");
             context.go('/account');
           }
           return;
@@ -257,26 +214,42 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
       
       final result = await _websocketModule?.connect(context);
       if (result == null || !result) {
-        _stateManager!.updatePluginState("game_room", {
+        final stateManager = Provider.of<StateManager>(context, listen: false);
+        final websocketState = stateManager.getPluginState<Map<String, dynamic>>("websocket") ?? {};
+        final error = websocketState['error'] ?? "Failed to connect to WebSocket server";
+        
+        stateManager.updatePluginState("game_room", <String, dynamic>{
           "isConnected": false,
           "roomId": null,
           "isLoading": false,
-          "error": "Failed to connect to WebSocket server"
+          "error": error
         });
-        _logController.text += "❌ Failed to connect to WebSocket server\n";
         
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Failed to connect to WebSocket server'),
-              backgroundColor: Colors.red,
-            ),
-          );
+        if (error.contains("No valid access token available")) {
+          _logController.text += "❌ Authentication error. Please log in to play the game.\n";
+          _logController.text += "🔀 Logging out and redirecting to login page...\n";
+          if (mounted) {
+            _log.info("🔀 Logging out user due to invalid token");
+            final logoutResult = await _loginModule?.logoutUser(context);
+            if (logoutResult?["error"] != null) {
+              _log.error("❌ Error during logout: ${logoutResult!["error"]}");
+              _logController.text += "❌ Error during logout: ${logoutResult["error"]}\n";
+            } else {
+              _log.info("✅ User logged out successfully");
+              _logController.text += "✅ User logged out successfully\n";
+            }
+            _log.info("🔀 Navigating to account screen");
+            context.go('/account');
+          }
+        } else {
+          _logController.text += "❌ $error\n";
         }
+        _scrollToBottom();
         return;
       }
-      
-      _stateManager!.updatePluginState("game_room", {
+
+      final stateManager = Provider.of<StateManager>(context, listen: false);
+      stateManager.updatePluginState("game_room", <String, dynamic>{
         "isConnected": true,
         "isLoading": false,
         "error": null
@@ -285,7 +258,8 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
       _scrollToBottom();
       
     } catch (e) {
-      _stateManager!.updatePluginState("game_room", {
+      final stateManager = Provider.of<StateManager>(context, listen: false);
+      stateManager.updatePluginState("game_room", <String, dynamic>{
         "isConnected": false,
         "roomId": null,
         "isLoading": false,
@@ -293,58 +267,6 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
       });
       _logController.text += "❌ Error connecting to WebSocket server: $e\n";
       _scrollToBottom();
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error connecting to WebSocket server: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _disconnectFromWebSocket() async {
-    if (!mounted || _websocketModule == null) return;
-    
-    try {
-      _logController.text += "⏳ Disconnecting from WebSocket server...\n";
-      _scrollToBottom();
-      
-      await _websocketModule?.disconnect();
-      
-      _updateRoomState({
-        "isConnected": false,
-        "roomId": null,
-        "roomState": null,
-        "isLoading": false,
-        "error": null
-      });
-      _logController.text += "✅ Disconnected from WebSocket server\n";
-      _scrollToBottom();
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Disconnected from WebSocket server'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-      }
-    } catch (e) {
-      _log.error("❌ Error disconnecting from WebSocket server: $e");
-      _logController.text += "❌ Error disconnecting from WebSocket server: $e\n";
-      _scrollToBottom();
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error disconnecting: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
     }
   }
 
@@ -358,203 +280,11 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
     }
   }
 
-  Future<void> _createRoom() async {
-    if (userId == null) {
-      _logController.text += "❌ Cannot create room: User ID not available\n";
-      _scrollToBottom();
-      return;
-    }
-
-    try {
-      _log.info("🔍 _createRoom method called");
-      _log.info("🔍 User ID: $userId");
-      _log.info("🔍 WebSocket module: ${_websocketModule != null ? 'available' : 'null'}");
-      
-      _updateRoomState(<String, dynamic>{"isLoading": true});
-      _logController.text += "⏳ Creating new room...\n";
-      _scrollToBottom();
-      
-      // Create a completer to wait for the room_created event
-      _roomCreationCompleter = Completer<bool>();
-      
-      // Send the createRoom request
-      final result = await _websocketModule?.createRoom(userId!);
-      _log.info("🔍 Create room result: ${result?.isSuccess}");
-      
-      if (result == null || !result.isSuccess) {
-        _updateRoomState(<String, dynamic>{
-          "isLoading": false,
-          "error": result?.error ?? 'Unknown error',
-        });
-        _log.error("❌ Failed to create room: ${result?.error ?? 'Unknown error'}");
-        _logController.text += "❌ Failed to create room: ${result?.error ?? 'Unknown error'}\n";
-        
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Failed to create room: ${result?.error ?? 'Unknown error'}'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-        return;
-      }
-
-      // Wait for the room_created event with a timeout
-      try {
-        await _roomCreationCompleter?.future.timeout(
-          const Duration(seconds: 5),
-          onTimeout: () {
-            _log.error("❌ Timeout waiting for room_created event");
-            return false;
-          },
-        );
-      } finally {
-        _roomCreationCompleter = null;
-      }
-      
-      _logController.text += "✅ Room created successfully\n";
-      _scrollToBottom();
-      
-    } catch (e) {
-      _updateRoomState(<String, dynamic>{
-        "isLoading": false,
-        "error": e.toString(),
-      });
-      _log.error("❌ Error creating room: $e");
-      _logController.text += "❌ Error creating room: $e\n";
-      _scrollToBottom();
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error creating room: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _joinGame() async {
-    _log.info("🔍 _joinGame method called");
-    _log.info("🔍 Room ID: ${_roomController.text}");
-    _log.info("🔍 WebSocket module: ${_websocketModule != null ? 'available' : 'null'}");
-    
-    if (_roomController.text.isEmpty) {
-      _updateRoomState({
-        "error": "Room ID cannot be empty",
-      });
-      _log.error("❌ Cannot join game: Room ID is empty");
-      return;
-    }
-    
-    try {
-      _log.info("⏳ Attempting to join game: ${_roomController.text}");
-      _updateRoomState({"isLoading": true});
-      
-      final completer = Completer<bool>();
-      
-      final subscription = _websocketModule?.eventStream.listen((event) {
-        if (event['type'] == 'room_joined' && event['data']['room_id'] == _roomController.text) {
-          completer.complete(true);
-        } else if (event['type'] == 'error' && event['data']['message']?.contains('Failed to join room') == true) {
-          completer.complete(false);
-        }
-      });
-      
-      final result = await _websocketModule?.joinGame(_roomController.text);
-      _log.info("🔍 Join game result: ${result?.isSuccess}");
-      
-      if (result == null || !result.isSuccess) {
-        _updateRoomState({
-          "isLoading": false,
-          "error": result?.error ?? 'Unknown error',
-        });
-        _log.error("❌ Failed to join game room: ${result?.error ?? 'Unknown error'}");
-        _logController.text += "❌ Failed to join game room: ${result?.error ?? 'Unknown error'}\n";
-        
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Failed to join game room: ${result?.error ?? 'Unknown error'}'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-        subscription?.cancel();
-        return;
-      }
-      
-      final success = await completer.future.timeout(
-        const Duration(seconds: 5),
-        onTimeout: () {
-          _log.error("❌ Timeout waiting for room join confirmation");
-          return false;
-        },
-      );
-      
-      subscription?.cancel();
-      
-      if (!success) {
-        _updateRoomState({
-          "isLoading": false,
-          "error": "Room does not exist or join failed",
-        });
-        _log.error("❌ Failed to join game room: Room does not exist or join failed");
-        _logController.text += "❌ Failed to join game room: Room does not exist or join failed\n";
-        
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Failed to join game room: Room does not exist or join failed'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-        return;
-      }
-      
-      _updateRoomState({
-        "isLoading": false,
-        "error": null,
-      });
-      _logController.text += "✅ Successfully joined game room: ${_roomController.text}\n";
-      _scrollToBottom();
-      
-    } catch (e) {
-      _updateRoomState({
-        "isLoading": false,
-        "error": e.toString(),
-      });
-      _log.error("❌ Error joining game: $e");
-      _logController.text += "❌ Error joining game: $e\n";
-      _scrollToBottom();
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error joining game: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  @override
-  void deactivate() {
-    _log.info("🔄 Game screen deactivated - maintaining WebSocket connection");
-    super.deactivate();
-  }
-
   @override
   void dispose() {
-    _log.info("🗑️ Game screen disposed - cleaning up resources");
     _roomController.dispose();
     _logController.dispose();
     _scrollController.dispose();
-    _disconnectFromWebSocket();
     super.dispose();
   }
 
@@ -562,68 +292,347 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
   Widget buildContent(BuildContext context) {
     return Consumer<StateManager>(
       builder: (context, stateManager, child) {
-        final roomState = stateManager.getPluginState<Map<String, dynamic>>("game_room") ?? {};
-        final currentRoomId = roomState["roomId"];
-        final isConnected = roomState["isConnected"] ?? false;
+        final gameRoomState = stateManager.getPluginState<Map<String, dynamic>>("game_room") ?? {};
+        final websocketState = stateManager.getPluginState<Map<String, dynamic>>("websocket") ?? {};
+        final gameTimerState = stateManager.getPluginState<Map<String, dynamic>>("game_timer") ?? {};
+        final gameRoundState = stateManager.getPluginState<Map<String, dynamic>>("game_round") ?? {};
 
-        return SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Column(
-              children: [
-                ConnectionStatus(
-                  isConnected: isConnected,
-                  onConnect: _connectToWebSocket,
-                  onDisconnect: _disconnectFromWebSocket,
-                  currentRoomId: currentRoomId,
+        final isConnected = gameRoomState['isConnected'] ?? false;
+        final roomId = gameRoomState['roomId'];
+        final isLoading = gameRoomState['isLoading'] ?? false;
+        final error = gameRoomState['error'];
+
+        return Column(
+          children: [
+            // Room Status Section
+            BaseCard(
+              child: RoomStatusSection(
+                roomState: gameRoomState,
+                websocketState: websocketState,
+                onConnect: _connectToWebSocket,
+              ),
+            ),
+
+            if (isConnected && !isLoading && error == null) ...[
+              if (roomId == null) ...[
+                // Create/Join Game Section
+                BaseCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Game Options',
+                        style: AppTextStyles.headingMedium(),
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          BaseButton(
+                            text: 'Create Game',
+                            onPressed: () {
+                              _logController.text += "🎮 Creating new game...\n";
+                              _scrollToBottom();
+                              _createGame();
+                            },
+                            icon: Icons.add_circle_outline,
+                          ),
+                          BaseButton(
+                            text: 'Join Game',
+                            onPressed: () {
+                              _logController.text += "🔗 Joining game...\n";
+                              _scrollToBottom();
+                              _showJoinGameDialog();
+                            },
+                            icon: Icons.login,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 8),
-                if (isConnected) ...[
-                  if (currentRoomId == null) ...[
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: CreateGame(
-                            onCreateGame: _createRoom,
-                            isConnected: isConnected,
-                            currentRoomId: currentRoomId,
-                            userId: userId,
-                            joinLink: joinLink,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: JoinGame(
-                            roomController: _roomController,
-                            onJoinGame: _joinGame,
-                            isConnected: isConnected,
-                            currentRoomId: currentRoomId,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ] else ...[
-                    GameState(
-                      isConnected: isConnected,
-                      currentRoomId: currentRoomId,
-                      roomState: roomState["roomState"],
-                    ),
-                  ],
-                ],
-                const SizedBox(height: 8),
-                SizedBox(
-                  height: 200,
-                  child: GameLog(
-                    logController: _logController,
-                    scrollController: _scrollController,
+              ] else ...[
+                // Game Room Section
+                BaseCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Game Room',
+                        style: AppTextStyles.headingMedium(),
+                      ),
+                      const SizedBox(height: 8),
+                      Text('Room ID: $roomId', style: AppTextStyles.bodyMedium),
+                      if (gameRoomState['joinLink'] != null)
+                        Text('Join Link: ${gameRoomState['joinLink']}', style: AppTextStyles.bodyMedium),
+                      const SizedBox(height: 16),
+                      BaseButton(
+                        text: 'Leave Room',
+                        onPressed: () {
+                          _logController.text += "🚪 Leaving room...\n";
+                          _scrollToBottom();
+                          _leaveRoom();
+                        },
+                        icon: Icons.logout,
+                        isPrimary: false,
+                      ),
+                    ],
                   ),
                 ),
               ],
+            ],
+            
+            // Game Timer Section
+            BaseCard(
+              child: GameTimerSection(
+                timerState: gameTimerState,
+              ),
             ),
-          ),
+            
+            // Game Round Section
+            BaseCard(
+              child: GameRoundSection(
+                roundState: gameRoundState,
+              ),
+            ),
+            
+            // Log Section
+            Expanded(
+              child: BaseCard(
+                child: LogSection(
+                  controller: _logController,
+                  scrollController: _scrollController,
+                ),
+              ),
+            ),
+          ],
         );
       },
+    );
+  }
+
+  void _createGame() {
+    if (_websocketModule == null) return;
+    
+    final stateManager = Provider.of<StateManager>(context, listen: false);
+    final websocketState = stateManager.getPluginState<Map<String, dynamic>>("websocket") ?? {};
+    final userId = websocketState['userId'];
+    
+    if (userId == null) {
+      _logController.text += "❌ User ID not found. Please log in first.\n";
+      _scrollToBottom();
+      return;
+    }
+    
+    _roomCreationCompleter = Completer<bool>();
+    _websocketModule!.createRoom(userId);
+    
+    _roomCreationCompleter?.future.then((success) {
+      if (!success) {
+        _logController.text += "❌ Failed to create game room\n";
+        _scrollToBottom();
+      }
+    });
+  }
+
+  void _showJoinGameDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Join Game', style: AppTextStyles.headingMedium()),
+        content: BaseTextField(
+          controller: _roomController,
+          label: 'Room ID',
+          hint: 'Enter room ID to join',
+        ),
+        actions: [
+          BaseButton(
+            text: 'Cancel',
+            onPressed: () {
+              Navigator.pop(context);
+            },
+            isPrimary: false,
+          ),
+          BaseButton(
+            text: 'Join',
+            onPressed: () {
+              Navigator.pop(context);
+              _joinGame();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _joinGame() {
+    if (_websocketModule == null) return;
+    
+    final roomId = _roomController.text.trim();
+    if (roomId.isEmpty) {
+      _logController.text += "❌ Please enter a room ID\n";
+      _scrollToBottom();
+      return;
+    }
+
+    _roomJoinCompleter = Completer<bool>();
+    _websocketModule!.joinRoom(roomId);
+    
+    _roomJoinCompleter?.future.then((success) {
+      if (!success) {
+        _logController.text += "❌ Failed to join room: $roomId\n";
+        _scrollToBottom();
+      }
+    });
+  }
+
+  void _leaveRoom() {
+    if (_websocketModule == null) return;
+    
+    final roomId = _roomController.text.trim();
+    _websocketModule!.leaveRoom(roomId);
+    
+    final stateManager = Provider.of<StateManager>(context, listen: false);
+    stateManager.updatePluginState("game_room", <String, dynamic>{
+      "roomId": null,
+      "roomState": null,
+      "joinLink": null,
+      "isLoading": false,
+      "error": null,
+    });
+  }
+}
+
+class RoomStatusSection extends StatelessWidget {
+  final Map<String, dynamic> roomState;
+  final Map<String, dynamic> websocketState;
+  final VoidCallback onConnect;
+
+  const RoomStatusSection({
+    Key? key,
+    required this.roomState,
+    required this.websocketState,
+    required this.onConnect,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final isConnected = roomState['isConnected'] ?? false;
+    final roomId = roomState['roomId'];
+    final error = roomState['error'] ?? websocketState['error'];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Room Status',
+          style: AppTextStyles.headingMedium(),
+        ),
+        const SizedBox(height: 8),
+        Text('Connected: ${isConnected ? 'Yes' : 'No'}', style: AppTextStyles.bodyMedium),
+        if (roomId != null) Text('Room ID: $roomId', style: AppTextStyles.bodyMedium),
+        if (error != null) Text('Error: $error', style: AppTextStyles.bodyMedium.copyWith(color: AppColors.redAccent)),
+        const SizedBox(height: 8),
+        BaseButton(
+          text: 'Connect',
+          onPressed: isConnected ? () {} : onConnect,
+          icon: Icons.wifi,
+          isPrimary: !isConnected,
+        ),
+      ],
+    );
+  }
+}
+
+class GameTimerSection extends StatelessWidget {
+  final Map<String, dynamic> timerState;
+
+  const GameTimerSection({
+    Key? key,
+    required this.timerState,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final isRunning = timerState['isRunning'] ?? false;
+    final duration = timerState['duration'] ?? 30;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Game Timer',
+          style: AppTextStyles.headingMedium(),
+        ),
+        const SizedBox(height: 8),
+        Text('Status: ${isRunning ? 'Running' : 'Stopped'}', style: AppTextStyles.bodyMedium),
+        Text('Duration: $duration seconds', style: AppTextStyles.bodyMedium),
+      ],
+    );
+  }
+}
+
+class GameRoundSection extends StatelessWidget {
+  final Map<String, dynamic> roundState;
+
+  const GameRoundSection({
+    Key? key,
+    required this.roundState,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final roundNumber = roundState['roundNumber'] ?? 0;
+    final hint = roundState['hint'] ?? false;
+    final imagesLoaded = roundState['imagesLoaded'] ?? false;
+    final factLoaded = roundState['factLoaded'] ?? false;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Game Round',
+          style: AppTextStyles.headingMedium(),
+        ),
+        const SizedBox(height: 8),
+        Text('Round Number: $roundNumber', style: AppTextStyles.bodyMedium),
+        Text('Hint Available: ${hint ? 'Yes' : 'No'}', style: AppTextStyles.bodyMedium),
+        Text('Images Loaded: ${imagesLoaded ? 'Yes' : 'No'}', style: AppTextStyles.bodyMedium),
+        Text('Fact Loaded: ${factLoaded ? 'Yes' : 'No'}', style: AppTextStyles.bodyMedium),
+      ],
+    );
+  }
+}
+
+class LogSection extends StatelessWidget {
+  final TextEditingController controller;
+  final ScrollController scrollController;
+
+  const LogSection({
+    Key? key,
+    required this.controller,
+    required this.scrollController,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Log',
+          style: AppTextStyles.headingMedium(),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: BaseTextField(
+            controller: controller,
+            label: 'Log Output',
+            readOnly: true,
+            maxLines: null,
+          ),
+        ),
+      ],
     );
   }
 } 
