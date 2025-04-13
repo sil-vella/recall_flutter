@@ -41,6 +41,9 @@ class WebSocketModule extends ModuleBase {
   late BroadcastManager _broadcastManager;
   late MessageManager _messageManager;
 
+  // Getter for socket
+  IO.Socket? get socket => _socketManager.socket;
+
   WebSocketModule() : super("websocket_module") {
     _log.info('✅ WebSocketModule initialized.');
     

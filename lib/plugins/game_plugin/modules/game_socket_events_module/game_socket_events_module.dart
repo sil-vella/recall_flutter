@@ -10,8 +10,8 @@ import 'dart:async';
 
 class GameSocketEventsModule extends ModuleBase {
   static final Logger _log = Logger();
-  StreamSubscription? _eventSubscription;
   WebSocketModule? _websocketModule;
+  StreamSubscription? _connectionSubscription;
 
   GameSocketEventsModule() : super("game_socket_events_module") {
     _log.info('🚀 GameSocketEventsModule initialized and auto-registered.');
@@ -30,75 +30,73 @@ class GameSocketEventsModule extends ModuleBase {
       return;
     }
 
-    _log.info("🔌 Setting up WebSocket event listeners...");
-    _setupEventListeners(context);
+    // Listen to connection state changes
+    _connectionSubscription = _websocketModule!.eventStream.listen((event) {
+      if (event['event'] == 'connect' && context.mounted) {
+        _log.info("🔌 WebSocket connected, setting up game event listeners...");
+        _setupEventListeners(context);
+      }
+    });
+
+    // If already connected, setup listeners immediately
+    if (_websocketModule!.socket != null) {
+      _log.info("🔌 WebSocket already connected, setting up game event listeners...");
+      _setupEventListeners(context);
+    }
   }
 
   void _setupEventListeners(BuildContext context) {
-    _eventSubscription?.cancel();
-    
-    if (_websocketModule == null) {
-      _log.error("❌ Cannot setup listeners: WebSocket module is null");
+    if (_websocketModule == null || _websocketModule!.socket == null) {
+      _log.error("❌ Cannot setup listeners: WebSocket module or socket is null");
       return;
     }
 
-    _log.info("🎯 Subscribing to WebSocket event stream...");
-    _eventSubscription = _websocketModule!.eventStream.listen((event) {
+    final socket = _websocketModule!.socket!;
+    
+    // Remove any existing listeners first
+    socket.off('room_created');
+    socket.off('room_joined');
+    socket.off('room_state');
+    socket.off('error');
+    
+    // Room events
+    socket.on('room_created', (data) {
       if (!context.mounted) {
         _log.info("⚠️ Context not mounted, skipping event");
         return;
       }
-
-      try {
-        _log.info("📨 Received WebSocket event: ${event.toString()}");
-        if (event == null) {
-          _log.error("❌ Received null event");
-          return;
-        }
-        
-        // Check for both event structures
-        final eventType = event['type'] ?? event['event'];
-        if (eventType == null) {
-          _log.error("❌ Event type is null in event: ${event.toString()}");
-          return;
-        }
-
-        final stateManager = Provider.of<StateManager>(context, listen: false);
-        _handleSocketEvent(event, eventType, stateManager);
-      } catch (e) {
-        _log.error("❌ Error handling WebSocket event: $e");
-      }
-    }, onError: (error) {
-      _log.error("❌ WebSocket stream error: $error");
-    }, onDone: () {
-      _log.info("✅ WebSocket stream closed");
+      _log.info("📨 Received room_created event: $data");
+      _handleRoomCreated(data, Provider.of<StateManager>(context, listen: false));
     });
 
-    _log.info("✅ WebSocket event listeners setup complete");
-  }
+    socket.on('room_joined', (data) {
+      if (!context.mounted) {
+        _log.info("⚠️ Context not mounted, skipping event");
+        return;
+      }
+      _log.info("📨 Received room_joined event: $data");
+      _handleRoomJoined(data, Provider.of<StateManager>(context, listen: false));
+    });
 
-  void _handleSocketEvent(Map<String, dynamic> event, String eventType, StateManager stateManager) {
-    _log.info("🔄 Processing event type: $eventType");
-    switch (eventType) {
-      case 'room_joined':
-        _log.info("🎮 Handling room_joined event");
-        _handleRoomJoined(event, stateManager);
-        break;
-      case 'room_created':
-        _log.info("🎮 Handling room_created event");
-        _handleRoomCreated(event, stateManager);
-        break;
-      case 'room_state':
-        _log.info("🎮 Handling room_state event");
-        _handleRoomState(event, stateManager);
-        break;
-      case 'error':
-        _log.info("🎮 Handling error event");
-        _handleError(event, stateManager);
-        break;
-      default:
-        _log.info("⚠️ Unknown event type: $eventType");
-    }
+    socket.on('room_state', (data) {
+      if (!context.mounted) {
+        _log.info("⚠️ Context not mounted, skipping event");
+        return;
+      }
+      _log.info("📨 Received room_state event: $data");
+      _handleRoomState(data, Provider.of<StateManager>(context, listen: false));
+    });
+
+    socket.on('error', (data) {
+      if (!context.mounted) {
+        _log.info("⚠️ Context not mounted, skipping event");
+        return;
+      }
+      _log.info("📨 Received error event: $data");
+      _handleError(data, Provider.of<StateManager>(context, listen: false));
+    });
+
+    _log.info("✅ Game WebSocket event listeners setup complete");
   }
 
   void _handleRoomJoined(Map<String, dynamic> event, StateManager stateManager) {
@@ -190,7 +188,14 @@ class GameSocketEventsModule extends ModuleBase {
   @override
   void dispose() {
     _log.info("🧹 Disposing GameSocketEventsModule");
-    _eventSubscription?.cancel();
+    _connectionSubscription?.cancel();
+    if (_websocketModule?.socket != null) {
+      final socket = _websocketModule!.socket!;
+      socket.off('room_created');
+      socket.off('room_joined');
+      socket.off('room_state');
+      socket.off('error');
+    }
     super.dispose();
   }
 } 

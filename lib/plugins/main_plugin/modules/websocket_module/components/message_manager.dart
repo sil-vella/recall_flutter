@@ -129,91 +129,12 @@ class MessageManager {
         'user_id': userId
       };
 
-      // Create a completer to wait for the room_created event
-      final completer = Completer<WebSocketResult>();
-      
-      // Set up a one-time listener for the room_created event
-      void onRoomCreated(dynamic eventData) {
-        _log.info("📨 Received room_created event: $eventData");
-        
-        if (eventData is! Map<String, dynamic>) {
-          _log.error("❌ Invalid room_created event data format: $eventData");
-          completer.complete(_resultHandler.createErrorResult('create_room', 'Invalid room_created event data format'));
-          return;
-        }
-
-        final roomId = eventData['room_id'];
-        if (roomId == null) {
-          _log.error("❌ Missing room_id in room_created event: $eventData");
-          completer.complete(_resultHandler.createErrorResult('create_room', 'Missing room_id in room_created event'));
-          return;
-        }
-
-        _log.info("✅ Processing room_created event for room: $roomId");
-        
-        // Update room state
-        _roomManager.currentRoomId = roomId;
-        _roomManager.rooms[roomId] = _roomManager.rooms[roomId] ?? {};
-        _roomManager.rooms[roomId]!.add(_socket!.id!);
-        _roomManager.sessionRooms[_socket!.id!] = _roomManager.sessionRooms[_socket!.id!] ?? {};
-        _roomManager.sessionRooms[_socket!.id!]!.add(roomId);
-
-        // Prepare response data
-        final responseData = {
-          'room_id': roomId,
-          'current_size': eventData['current_size'] ?? 1,
-          'max_size': eventData['max_size'] ?? 2
-        };
-
-        _log.info("✅ Room state updated: $responseData");
-        completer.complete(_resultHandler.createSuccessResult('create_room', data: responseData));
-      }
-
-      // Set up a one-time listener for errors
-      void onError(dynamic errorData) {
-        _log.error("❌ Received error event: $errorData");
-        if (errorData is Map<String, dynamic> && errorData['message']?.contains('Failed to create room') == true) {
-          completer.complete(_resultHandler.createErrorResult('create_room', errorData['message']));
-        } else {
-          completer.complete(_resultHandler.createErrorResult('create_room', 'Unknown error during room creation'));
-        }
-      }
-
-      // Add event listeners BEFORE emitting the event
-      _log.info("👂 Setting up event listeners for room_created and error events");
-      _socket!.on('room_created', onRoomCreated);
-      _socket!.on('error', onError);
-      
       // Emit create_room event
       _log.info("📤 Emitting create_room event with data: $data");
       _socket!.emit('create_room', data);
 
-      // Wait for the room_created event with a timeout
-      try {
-        _log.info("⏳ Waiting for room_created event (timeout: 5s)");
-        final result = await completer.future.timeout(
-          const Duration(seconds: 5),
-          onTimeout: () {
-            _log.error("❌ Timeout waiting for room_created event");
-            return _resultHandler.createErrorResult('create_room', 'Timeout waiting for room creation confirmation');
-          },
-        );
-        
-        // Remove event listeners
-        _log.info("🧹 Cleaning up event listeners");
-        _socket!.off('room_created', onRoomCreated);
-        _socket!.off('error', onError);
-        
-        _log.info("✅ Room creation process completed: ${result.data}");
-        return result;
-      } catch (e) {
-        // Remove event listeners
-        _log.error("🧹 Cleaning up event listeners after error");
-        _socket!.off('room_created', onRoomCreated);
-        _socket!.off('error', onError);
-        _log.error("❌ Error during room creation: $e");
-        return _resultHandler.createUnknownErrorResult('create_room', e.toString());
-      }
+      // Return success immediately since the game plugin will handle the response
+      return _resultHandler.createSuccessResult('create_room', data: data);
     } catch (e) {
       _log.error("❌ Error creating room: $e");
       return _resultHandler.createUnknownErrorResult('create_room', e.toString());

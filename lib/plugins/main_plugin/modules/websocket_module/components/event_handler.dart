@@ -48,33 +48,6 @@ class EventHandler {
       _handleEvent('error', {'error': error.toString()});
     });
 
-    // Room events
-    _socket!.on('room_joined', (data) {
-      _log.info("✅ Joined room: $data");
-      _handleEvent('room_joined', data);
-    });
-
-    _socket!.on('room_left', (data) {
-      _log.info("✅ Left room: $data");
-      _handleEvent('room_left', data);
-    });
-
-    _socket!.on('room_error', (data) {
-      _log.error("❌ Room error: $data");
-      _handleEvent('room_error', data);
-    });
-
-    // Message events
-    _socket!.on('message', (data) {
-      _log.info("📨 Received message: $data");
-      _handleEvent('message', data);
-    });
-
-    _socket!.on('message_error', (data) {
-      _log.error("❌ Message error: $data");
-      _handleEvent('message_error', data);
-    });
-
     // Session events
     _socket!.on('session_update', (data) {
       _log.info("✅ Session updated: $data");
@@ -118,30 +91,6 @@ class EventHandler {
           'sessionId': null,
           'currentRoomId': null,
           'roomState': null,
-          'error': null
-        });
-        break;
-      case 'room_joined':
-        final currentState = _stateManager.getPluginState<Map<String, dynamic>>("websocket") ?? {};
-        final joinedRooms = List<String>.from(currentState['joinedRooms'] ?? []);
-        joinedRooms.add(data['room_id']);
-        
-        _updateState({
-          'currentRoomId': data['room_id'],
-          'roomState': data['room_state'],
-          'joinedRooms': joinedRooms,
-          'error': null
-        });
-        break;
-      case 'room_left':
-        final currentState = _stateManager.getPluginState<Map<String, dynamic>>("websocket") ?? {};
-        final joinedRooms = List<String>.from(currentState['joinedRooms'] ?? []);
-        joinedRooms.remove(data['room_id']);
-        
-        _updateState({
-          'currentRoomId': null,
-          'roomState': null,
-          'joinedRooms': joinedRooms,
           'error': null
         });
         break;
