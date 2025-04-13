@@ -11,6 +11,7 @@ import '../../../../../utils/consts/theme_consts.dart';
 import '../../../main_plugin/modules/websocket_module/components/result_handler.dart';
 import '../../../main_plugin/modules/websocket_module/websocket_module.dart';
 import '../../../main_plugin/modules/login_module/login_module.dart';
+import '../../modules/game_socket_events_module/game_socket_events_module.dart';
 import 'components/components.dart';
 import 'package:go_router/go_router.dart';
 import 'dart:async';
@@ -43,7 +44,6 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
   void initState() {
     super.initState();
     _initDependencies();
-    _setupWebSocketListeners();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _getUserId();
     });
@@ -55,100 +55,17 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
       _servicesManager = Provider.of<ServicesManager>(context, listen: false);
       _websocketModule = _moduleManager.getLatestModule<WebSocketModule>();
       _loginModule = _moduleManager.getLatestModule<LoginModule>();
+      
+      // Initialize the game socket events module
+      final gameSocketEventsModule = _moduleManager.getLatestModule<GameSocketEventsModule>();
+      if (gameSocketEventsModule != null) {
+        gameSocketEventsModule.initialize(context);
+      }
     } catch (e) {
       _log.error("❌ Error initializing dependencies: $e");
       _logController.text += "❌ Error initializing dependencies: $e\n";
       _scrollToBottom();
     }
-  }
-
-  void _setupWebSocketListeners() {
-    if (_websocketModule == null) {
-      _log.error("❌ WebSocket module not available");
-      _logController.text += "❌ Error: WebSocket module not available\n";
-      _scrollToBottom();
-      return;
-    }
-
-    _websocketModule!.eventStream.listen((event) {
-      if (!mounted) return;
-
-      try {
-        final stateManager = Provider.of<StateManager>(context, listen: false);
-        switch (event['type']) {
-          case 'room_joined':
-            stateManager.updatePluginState("game_room", <String, dynamic>{
-              "roomId": event['data']['room_id'],
-              "isConnected": true,
-              "roomState": <String, dynamic>{
-                "current_size": event['data']['current_size'],
-                "max_size": event['data']['max_size'],
-              },
-              "isLoading": false,
-              "error": null,
-            });
-            _logController.text += "✅ Successfully joined room: ${event['data']['room_id']}\n";
-            _scrollToBottom();
-            _roomJoinCompleter?.complete(true);
-            _roomJoinCompleter = null;
-            break;
-          case 'room_created':
-            _log.info("📨 Received room_created event: ${event['data']}");
-            stateManager.updatePluginState("game_room", <String, dynamic>{
-              "roomId": event['data']['room_id'],
-              "isConnected": true,
-              "roomState": <String, dynamic>{
-                "current_size": event['data']['current_size'],
-                "max_size": event['data']['max_size'],
-                "owner_id": event['data']['owner_id'],
-                "owner_username": event['data']['owner_username'],
-                "permission": event['data']['permission'],
-                "allowed_users": event['data']['allowed_users'],
-                "allowed_roles": event['data']['allowed_roles'],
-                "join_link": event['data']['join_link'],
-              },
-              "joinLink": event['data']['join_link'],
-              "isLoading": false,
-              "error": null,
-            });
-            _logController.text += "✅ Room created: ${event['data']['room_id']}\n";
-            _scrollToBottom();
-            _roomCreationCompleter?.complete(true);
-            _roomCreationCompleter = null;
-            break;
-          case 'room_state':
-            final currentState = stateManager.getPluginState<Map<String, dynamic>>("game_room") ?? {};
-            stateManager.updatePluginState("game_room", <String, dynamic>{
-              ...currentState,
-              "roomState": <String, dynamic>{
-                ...currentState["roomState"] ?? {},
-                ...event['data'],
-              },
-            });
-            _logController.text += "📊 Room state updated\n";
-            _scrollToBottom();
-            break;
-          case 'error':
-            if (event['data']['message']?.contains('Failed to join room') == true) {
-              stateManager.updatePluginState("game_room", <String, dynamic>{
-                "roomId": null,
-                "roomState": null,
-                "isLoading": false,
-                "error": event['data']['message'],
-              });
-              _roomJoinCompleter?.complete(false);
-              _roomJoinCompleter = null;
-            }
-            _logController.text += "❌ Error: ${event['data']['message']}\n";
-            _scrollToBottom();
-            break;
-        }
-      } catch (e) {
-        _log.error("❌ Error handling WebSocket event: $e");
-        _logController.text += "❌ Error handling WebSocket event: $e\n";
-        _scrollToBottom();
-      }
-    });
   }
 
   Future<void> _getUserId() async {

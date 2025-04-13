@@ -344,7 +344,7 @@ abstract class BaseScreenState<T extends BaseScreen> extends State<T> {
                     minHeight: constraints.maxHeight,
                   ),
                   child: Column(
-                    mainAxisSize: MainAxisSize.min,
+                    mainAxisSize: MainAxisSize.max,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       if (bannerAdModule != null)
@@ -355,7 +355,10 @@ abstract class BaseScreenState<T extends BaseScreen> extends State<T> {
                           ),
                         ),
 
-                      buildContent(context),
+                      SizedBox(
+                        height: constraints.maxHeight - (bannerAdModule != null ? 100 : 0),
+                        child: buildContent(context),
+                      ),
 
                       if (bannerAdModule != null)
                         SizedBox(

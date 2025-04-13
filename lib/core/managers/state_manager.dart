@@ -97,17 +97,11 @@ class StateManager with ChangeNotifier {
     if (existingState != null) {
       // ✅ Ensure `merge` exists (assuming it's a custom method)
       final newMergedState = existingState.merge(newState);
-
-      // ✅ More reliable state comparison
-      if (force || !mapEquals(existingState.state, newMergedState.state)) {
-        _pluginStates[pluginKey] = newMergedState;
-        _log.info("✅ Updated state for '$pluginKey': ${_pluginStates[pluginKey]!.state} (force: $force)");
-
-        // ✅ Notify immediately for real-time updates
-        notifyListeners();
-      } else {
-        _log.info("🔁 No change detected for '$pluginKey', skipping notify. (force: $force)");
-      }
+      _pluginStates[pluginKey] = newMergedState;
+      _log.info("✅ Updated state for plugin '$pluginKey'");
+      notifyListeners();
+    } else {
+      _log.error("❌ Cannot update state for '$pluginKey' - existing state is null");
     }
   }
 

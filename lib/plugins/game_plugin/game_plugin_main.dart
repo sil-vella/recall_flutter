@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:recall/plugins/game_plugin/modules/function_helper_module/function_helper_module.dart';
+import 'package:recall/plugins/game_plugin/modules/game_socket_events_module/game_socket_events_module.dart';
 import 'package:recall/plugins/game_plugin/screens/game_screen/index.dart';
 import '../../core/00_base/module_base.dart';
 import '../../core/00_base/plugin_base.dart';
@@ -90,6 +91,7 @@ class GamePlugin extends PluginBase {
   Map<String?, ModuleBase> createModules() {
     return {
       null: FunctionHelperModule(),
+      "game_socket_events": GameSocketEventsModule(),
     };
   }
 
