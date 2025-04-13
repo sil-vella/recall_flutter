@@ -1,4 +1,8 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart' as launcher;
+import 'dart:async';
 
 import '../../../../core/00_base/module_base.dart';
 import 'package:http/http.dart' as http;
@@ -6,6 +10,9 @@ import 'dart:convert';
 import 'package:http_interceptor/http_interceptor.dart';
 import '../../../../tools/logging/logger.dart';
 import 'interceptor.dart';
+import '../../../../core/managers/module_manager.dart';
+import '../../../../core/managers/state_manager.dart';
+import '../websocket_module/websocket_module.dart';
 
 class ConnectionsApiModule extends ModuleBase {
   static final Logger _log = Logger();
@@ -20,8 +27,29 @@ class ConnectionsApiModule extends ModuleBase {
 
   ConnectionsApiModule(this.baseUrl) : super('connections_module') {
     _log.info('🔌 ConnectionsModule initialized with baseUrl: $baseUrl');
-
     _sendTestRequest();
+  }
+
+  /// Generate both HTTP and app deep links for a given path
+  static Map<String, String> generateLinks(String path) {
+    return {
+      'http': 'https://recall.app$path',
+      'app': 'recall://$path'
+    };
+  }
+
+  /// Launch a URL, either in browser or app
+  static Future<bool> launchUrl(String url) async {
+    final uri = Uri.parse(url);
+    try {
+      return await launcher.launchUrl(
+        uri,
+        mode: launcher.LaunchMode.externalApplication
+      );
+    } catch (e) {
+      _log.error('❌ Failed to launch URL: $url', error: e);
+      return false;
+    }
   }
 
   /// ✅ Update authentication tokens

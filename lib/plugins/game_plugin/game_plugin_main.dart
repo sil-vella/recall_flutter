@@ -16,40 +16,54 @@ import '../main_plugin/modules/connections_api_module/connections_api_module.dar
 import '../main_plugin/modules/websocket_module/websocket_module.dart';
 
 class GamePlugin extends PluginBase {
+  static final Logger _log = Logger();
+  late GameSocketEventsModule _gameSocketEventsModule;
   late final NavigationManager navigationManager;
 
-  GamePlugin();
+  GamePlugin() : super() {
+    _log.info('🚀 GamePlugin initialized.');
+    _gameSocketEventsModule = GameSocketEventsModule();
+  }
 
   @override
   void initialize(BuildContext context) {
-    log.info("🔄 Initializing ${runtimeType.toString()}...");
-
-    super.initialize(context);
+    _log.info("🔄 Initializing GamePlugin...");
     final moduleManager = Provider.of<ModuleManager>(context, listen: false);
     final servicesManager = Provider.of<ServicesManager>(context, listen: false);
     final stateManager = Provider.of<StateManager>(context, listen: false);
     navigationManager = Provider.of<NavigationManager>(context, listen: false);
-
+    
     // Initialize states before any other operations
     _initializeStates(stateManager);
     _initializeUserData(context);
     _registerNavigation();
-
-    // Register all game-related modules in ModuleManager
-    final modules = createModules();
-    for (var entry in modules.entries) {
-      final instanceKey = entry.key;
-      final module = entry.value;
-      moduleManager.registerModule(module, instanceKey: instanceKey);
-    }
+    
+    // Register modules
+    moduleManager.registerModule(_gameSocketEventsModule);
+    
+    // Initialize modules
+    _gameSocketEventsModule.initialize(context);
 
     // Check if WebSocketModule is available
     final websocketModule = moduleManager.getLatestModule<WebSocketModule>();
     if (websocketModule == null) {
-      Logger().error('❌ WebSocketModule not found in ModuleManager. Game functionality may be limited.');
+      _log.error('❌ WebSocketModule not found in ModuleManager. Game functionality may be limited.');
     } else {
-      Logger().info('✅ Found WebSocketModule instance. Game functionality is available.');
+      _log.info('✅ Found WebSocketModule instance. Game functionality is available.');
     }
+  }
+
+  void _registerNavigation() {
+    // Register the game screen route
+    navigationManager.registerRoute(
+      path: '/game',
+      screen: (context) => const GameScreen(),
+      drawerTitle: 'Dutch Card Game',
+      drawerIcon: Icons.sports_esports,
+      drawerPosition: 2, // Position after home screen
+    );
+    
+    _log.info("✅ Game screen route registered with drawer entry.");
   }
 
   /// Initialize all plugin states
@@ -91,10 +105,9 @@ class GamePlugin extends PluginBase {
   Map<String?, ModuleBase> createModules() {
     return {
       null: FunctionHelperModule(),
-      "game_socket_events": GameSocketEventsModule(),
+      "game_socket_events": _gameSocketEventsModule,
     };
   }
-
 
   /// ✅ Define initial states for this plugin
   @override
@@ -122,26 +135,12 @@ class GamePlugin extends PluginBase {
     };
   }
 
-  void _registerNavigation() {
-    // Register the game screen route
-    navigationManager.registerRoute(
-      path: '/game',
-      screen: (context) => const GameScreen(),
-      drawerTitle: 'Dutch Card Game',
-      drawerIcon: Icons.sports_esports,
-      drawerPosition: 2, // Position after home screen
-    );
-    
-    Logger().info("✅ Game screen route registered with drawer entry.");
-  }
-
-
   Future<void> _initializeUserData(BuildContext context) async {
     final servicesManager = Provider.of<ServicesManager>(context, listen: false);
     final sharedPref = servicesManager.getService<SharedPrefManager>('shared_pref');
 
     if (sharedPref == null) {
-      Logger().error('❌ SharedPrefManager not found.');
+      _log.error('❌ SharedPrefManager not found.');
       return;
     }
 
@@ -152,14 +151,12 @@ class GamePlugin extends PluginBase {
       sharedPref.setString('email', '');
       sharedPref.setString('password', '');
     }
-    
   }
-
 
   /// ✅ Initialize SharedPreferences keys for levels, points, and guessed names
   Future<void> _initializeCategorySystem(List<String> categories, SharedPrefManager sharedPref) async {
     try {
-      Logger().info("⚙️ Initializing SharedPreferences for levels, points, and guessed names...");
+      _log.info("⚙️ Initializing SharedPreferences for levels, points, and guessed names...");
 
       for (String category in categories) {
         // ✅ Fetch max levels directly
@@ -180,11 +177,11 @@ class GamePlugin extends PluginBase {
           // ✅ Set empty guessed names list directly
           sharedPref.setStringList(guessedKey, sharedPref.getStringList(guessedKey) ?? []);
 
-          Logger().info("✅ Initialized keys for $category: level $level");
+          _log.info("✅ Initialized keys for $category: level $level");
         }
       }
     } catch (e) {
-      Logger().error("❌ Error initializing category system: $e", error: e);
+      _log.error("❌ Error initializing category system: $e", error: e);
     }
   }
 
@@ -202,4 +199,64 @@ class GamePlugin extends PluginBase {
     return stateManager.getPluginState<Map<String, dynamic>>("game_room") ?? {};
   }
 
+  /// Generate join links for a room
+  static Map<String, String> generateJoinLinks(String roomId) {
+    return ConnectionsApiModule.generateLinks('/join/$roomId');
+  }
+
+  /// Handle joining a room via deep link
+  Widget handleJoinRoom(BuildContext context, String? roomId) {
+    if (roomId == null || !roomId.startsWith('room__')) {
+      return const Scaffold(
+        body: Center(
+          child: Text('Invalid room ID'),
+        ),
+      );
+    }
+
+    // Update state to show loading
+    final stateManager = Provider.of<StateManager>(context, listen: false);
+    stateManager.updatePluginState("game_room", <String, dynamic>{
+      "isLoading": true,
+      "error": null
+    });
+
+    // Get WebSocket module and join room
+    final moduleManager = Provider.of<ModuleManager>(context, listen: false);
+    final websocketModule = moduleManager.getLatestModule<WebSocketModule>();
+    
+    if (websocketModule == null) {
+      stateManager.updatePluginState("game_room", <String, dynamic>{
+        "isLoading": false,
+        "error": "WebSocket connection not available"
+      });
+      return const Scaffold(
+        body: Center(
+          child: Text('WebSocket connection not available'),
+        ),
+      );
+    }
+
+    // Join the room
+    websocketModule.joinRoom(roomId);
+
+    // Show loading screen while joining
+    return const Scaffold(
+      body: Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GameScreen();
+  }
+
+  @override
+  void dispose(BuildContext context) {
+    _log.info("🧹 Disposing GamePlugin");
+    _gameSocketEventsModule.dispose();
+    super.dispose(context);
+  }
 }
