@@ -294,115 +294,168 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
       builder: (context, stateManager, child) {
         final gameRoomState = stateManager.getPluginState<Map<String, dynamic>>("game_room") ?? {};
         final websocketState = stateManager.getPluginState<Map<String, dynamic>>("websocket") ?? {};
-        final gameTimerState = stateManager.getPluginState<Map<String, dynamic>>("game_timer") ?? {};
-        final gameRoundState = stateManager.getPluginState<Map<String, dynamic>>("game_round") ?? {};
 
         final isConnected = gameRoomState['isConnected'] ?? false;
-        final roomId = gameRoomState['roomId'];
         final isLoading = gameRoomState['isLoading'] ?? false;
         final error = gameRoomState['error'];
 
         return Column(
           children: [
-            // Room Status Section
-            BaseCard(
-              child: RoomStatusSection(
-                roomState: gameRoomState,
-                websocketState: websocketState,
-                onConnect: _connectToWebSocket,
-              ),
-            ),
-
-            if (isConnected && !isLoading && error == null) ...[
-              if (roomId == null) ...[
-                // Create/Join Game Section
-                BaseCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Game Options',
-                        style: AppTextStyles.headingMedium(),
-                      ),
-                      const SizedBox(height: 16),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          BaseButton(
-                            text: 'Create Game',
-                            onPressed: () {
-                              _logController.text += "🎮 Creating new game...\n";
-                              _scrollToBottom();
-                              _createGame();
-                            },
-                            icon: Icons.add_circle_outline,
-                          ),
-                          BaseButton(
-                            text: 'Join Game',
-                            onPressed: () {
-                              _logController.text += "🔗 Joining game...\n";
-                              _scrollToBottom();
-                              _showJoinGameDialog();
-                            },
-                            icon: Icons.login,
-                          ),
-                        ],
-                      ),
-                    ],
+            // Top Section - Room Status and Game Options
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Room Status Card
+                Expanded(
+                  flex: 1,
+                  child: BaseCard(
+                    child: RoomStatusSection(
+                      roomState: gameRoomState,
+                      websocketState: websocketState,
+                      onConnect: _connectToWebSocket,
+                    ),
                   ),
                 ),
-              ] else ...[
-                // Game Room Section
-                BaseCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Game Room',
-                        style: AppTextStyles.headingMedium(),
-                      ),
-                      const SizedBox(height: 8),
-                      Text('Room ID: $roomId', style: AppTextStyles.bodyMedium),
-                      if (gameRoomState['joinLink'] != null)
-                        Text('Join Link: ${gameRoomState['joinLink']}', style: AppTextStyles.bodyMedium),
-                      const SizedBox(height: 16),
-                      BaseButton(
-                        text: 'Leave Room',
-                        onPressed: () {
-                          _logController.text += "🚪 Leaving room...\n";
-                          _scrollToBottom();
-                          _leaveRoom();
-                        },
-                        icon: Icons.logout,
-                        isPrimary: false,
-                      ),
-                    ],
+                const SizedBox(width: 16),
+                // Game Options Card (only show when not in a game)
+                if (isConnected && !isLoading && error == null)
+                  Consumer<StateManager>(
+                    builder: (context, stateManager, child) {
+                      final roomState = stateManager.getPluginState<Map<String, dynamic>>("game_room") ?? {};
+                      final roomId = roomState['roomId'];
+                      
+                      if (roomId == null) {
+                        return Expanded(
+                          flex: 1,
+                          child: BaseCard(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Game Options',
+                                  style: AppTextStyles.headingMedium(),
+                                ),
+                                const SizedBox(height: 16),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    BaseButton(
+                                      text: 'Create Game',
+                                      onPressed: () {
+                                        _logController.text += "🎮 Creating new game...\n";
+                                        _scrollToBottom();
+                                        _createGame();
+                                      },
+                                      icon: Icons.add_circle_outline,
+                                    ),
+                                    BaseButton(
+                                      text: 'Join Game',
+                                      onPressed: () {
+                                        _logController.text += "🔗 Joining game...\n";
+                                        _scrollToBottom();
+                                        _showJoinGameDialog();
+                                      },
+                                      icon: Icons.login,
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+                      return const SizedBox.shrink();
+                    },
                   ),
-                ),
+                // Game Room Card (only show when in a game)
+                if (isConnected && !isLoading && error == null)
+                  Consumer<StateManager>(
+                    builder: (context, stateManager, child) {
+                      final roomState = stateManager.getPluginState<Map<String, dynamic>>("game_room") ?? {};
+                      final roomId = roomState['roomId'];
+                      
+                      if (roomId != null) {
+                        return Expanded(
+                          flex: 1,
+                          child: BaseCard(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Game Room',
+                                  style: AppTextStyles.headingMedium(),
+                                ),
+                                const SizedBox(height: 8),
+                                Text('Room ID: $roomId', style: AppTextStyles.bodyMedium),
+                                if (roomState['joinLink'] != null)
+                                  Text('Join Link: ${roomState['joinLink']}', style: AppTextStyles.bodyMedium),
+                                const SizedBox(height: 16),
+                                BaseButton(
+                                  text: 'Leave Room',
+                                  onPressed: () {
+                                    _logController.text += "🚪 Leaving room...\n";
+                                    _scrollToBottom();
+                                    _leaveRoom();
+                                  },
+                                  icon: Icons.logout,
+                                  isPrimary: false,
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+                      return const SizedBox.shrink();
+                    },
+                  ),
               ],
-            ],
-            
-            // Game Timer Section
-            BaseCard(
-              child: GameTimerSection(
-                timerState: gameTimerState,
-              ),
             ),
-            
-            // Game Round Section
-            BaseCard(
-              child: GameRoundSection(
-                roundState: gameRoundState,
-              ),
+            const SizedBox(height: 16),
+            // Game Timer and Round Info (only show when in a game)
+            Consumer<StateManager>(
+              builder: (context, stateManager, child) {
+                final roomState = stateManager.getPluginState<Map<String, dynamic>>("game_room") ?? {};
+                final roomId = roomState['roomId'];
+                
+                if (roomId != null) {
+                  final gameTimerState = stateManager.getPluginState<Map<String, dynamic>>("game_timer") ?? {};
+                  final gameRoundState = stateManager.getPluginState<Map<String, dynamic>>("game_round") ?? {};
+                  
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Game Timer Card
+                      Expanded(
+                        flex: 1,
+                        child: BaseCard(
+                          child: GameTimerSection(
+                            timerState: gameTimerState,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      // Game Round Card
+                      Expanded(
+                        flex: 1,
+                        child: BaseCard(
+                          child: GameRoundSection(
+                            roundState: gameRoundState,
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                }
+                return const SizedBox.shrink();
+              },
             ),
-            
+            const SizedBox(height: 16),
             // Log Section
-            Expanded(
-              child: BaseCard(
-                child: LogSection(
-                  controller: _logController,
-                  scrollController: _scrollController,
-                ),
+            BaseCard(
+              child: LogSection(
+                controller: _logController,
+                scrollController: _scrollController,
               ),
             ),
           ],
@@ -616,23 +669,11 @@ class LogSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Log',
-          style: AppTextStyles.headingMedium(),
-        ),
-        const SizedBox(height: 8),
-        Expanded(
-          child: BaseTextField(
-            controller: controller,
-            label: 'Log Output',
-            readOnly: true,
-            maxLines: null,
-          ),
-        ),
-      ],
+    return BaseTextField(
+      controller: controller,
+      label: 'Log Output',
+      readOnly: true,
+      maxLines: null,
     );
   }
 } 

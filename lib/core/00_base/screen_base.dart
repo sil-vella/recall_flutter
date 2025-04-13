@@ -15,6 +15,36 @@ abstract class BaseScreen extends StatefulWidget {
   /// Define a method to compute the title dynamically
   String computeTitle(BuildContext context);
 
+  /// Optional method to provide actions for the app bar
+  List<Widget>? getAppBarActions(BuildContext context) => null;
+
+  /// Optional method to provide a custom app bar
+  PreferredSizeWidget? getAppBar(BuildContext context) => null;
+
+  /// Optional method to provide a floating action button
+  Widget? getFloatingActionButton(BuildContext context) => null;
+
+  /// Optional method to provide a bottom navigation bar
+  Widget? getBottomNavigationBar(BuildContext context) => null;
+
+  /// Optional method to provide a custom background
+  Decoration? getBackground(BuildContext context) => null;
+
+  /// Optional method to provide a custom content padding
+  EdgeInsets? getContentPadding(BuildContext context) => null;
+
+  /// Optional method to provide a custom content margin
+  EdgeInsets? getContentMargin(BuildContext context) => null;
+
+  /// Optional method to provide a custom content alignment
+  MainAxisAlignment? getContentAlignment(BuildContext context) => null;
+
+  /// Optional method to provide a custom content cross alignment
+  CrossAxisAlignment? getContentCrossAlignment(BuildContext context) => null;
+
+  /// Optional method to provide a custom content main axis size
+  MainAxisSize? getContentMainAxisSize(BuildContext context) => null;
+
   @override
   BaseScreenState createState();
 }
@@ -22,14 +52,246 @@ abstract class BaseScreen extends StatefulWidget {
 abstract class BaseScreenState<T extends BaseScreen> extends State<T> {
   late final AppManager appManager;
   final ModuleManager _moduleManager = ModuleManager();
-
   final Logger log = Logger();
   BannerAdModule? bannerAdModule;
+
+  // Layout components with automatic theme application
+  Widget buildHeader(BuildContext context, {required Widget child}) {
+    return Container(
+      width: double.infinity,
+      padding: AppPadding.defaultPadding,
+      child: child,
+    );
+  }
+
+  Widget buildContentCard(BuildContext context, {required Widget child}) {
+    return Card(
+      margin: widget.getContentMargin(context) ?? AppPadding.defaultPadding,
+      color: AppColors.primaryColor.withOpacity(0.8),
+      elevation: 4,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: AppColors.accentColor.withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      child: SizedBox(
+        width: double.infinity,
+        child: Padding(
+          padding: widget.getContentPadding(context) ?? AppPadding.cardPadding,
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  Widget buildListTile({
+    required String title,
+    String? subtitle,
+    Widget? leading,
+    Widget? trailing,
+    VoidCallback? onTap,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      child: ListTile(
+        title: Text(title, style: AppTextStyles.bodyLarge),
+        subtitle: subtitle != null ? Text(subtitle, style: AppTextStyles.bodyMedium) : null,
+        leading: leading,
+        trailing: trailing,
+        onTap: onTap,
+        contentPadding: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+          side: BorderSide(
+            color: AppColors.accentColor.withOpacity(0.1),
+            width: 1,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget buildRow({
+    required List<Widget> children,
+    MainAxisAlignment? mainAxisAlignment,
+    CrossAxisAlignment? crossAxisAlignment,
+    MainAxisSize? mainAxisSize,
+    bool expand = true,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      child: Row(
+        mainAxisAlignment: mainAxisAlignment ?? widget.getContentAlignment(context) ?? MainAxisAlignment.start,
+        crossAxisAlignment: crossAxisAlignment ?? CrossAxisAlignment.center,
+        mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
+        children: children,
+      ),
+    );
+  }
+
+  Widget buildButtonRow({
+    required List<Widget> children,
+    MainAxisAlignment? mainAxisAlignment,
+    bool expand = true,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      child: Row(
+        mainAxisAlignment: mainAxisAlignment ?? widget.getContentAlignment(context) ?? MainAxisAlignment.end,
+        mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
+        children: children,
+      ),
+    );
+  }
+
+  Widget buildExpandedRow({
+    required List<Widget> children,
+    MainAxisAlignment? mainAxisAlignment,
+    CrossAxisAlignment? crossAxisAlignment,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      child: Row(
+        mainAxisAlignment: mainAxisAlignment ?? widget.getContentAlignment(context) ?? MainAxisAlignment.start,
+        crossAxisAlignment: crossAxisAlignment ?? CrossAxisAlignment.center,
+        mainAxisSize: MainAxisSize.max,
+        children: children.map((child) => Expanded(child: child)).toList(),
+      ),
+    );
+  }
+
+  Widget buildFormField({
+    required String label,
+    required TextEditingController controller,
+    String? hint,
+    bool obscureText = false,
+    TextInputType? keyboardType,
+    String? Function(String?)? validator,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      child: TextFormField(
+        controller: controller,
+        decoration: InputDecoration(
+          labelText: label,
+          hintText: hint,
+          labelStyle: AppTextStyles.bodyMedium.copyWith(
+            color: AppColors.accentColor,
+          ),
+          hintStyle: AppTextStyles.bodyMedium.copyWith(
+            color: AppColors.lightGray,
+          ),
+          filled: true,
+          fillColor: AppColors.primaryColor.withOpacity(0.8),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(
+              color: AppColors.accentColor.withOpacity(0.3),
+              width: 1,
+            ),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(
+              color: AppColors.accentColor.withOpacity(0.3),
+              width: 1,
+            ),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(
+              color: AppColors.accentColor,
+              width: 1,
+            ),
+          ),
+          errorBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(
+              color: AppColors.redAccent,
+              width: 1,
+            ),
+          ),
+          focusedErrorBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(
+              color: AppColors.redAccent,
+              width: 1,
+            ),
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        ),
+        obscureText: obscureText,
+        keyboardType: keyboardType,
+        validator: validator,
+        style: AppTextStyles.bodyMedium,
+      ),
+    );
+  }
+
+  Widget buildLoadingIndicator() {
+    return const SizedBox(
+      width: double.infinity,
+      child: Center(
+        child: CircularProgressIndicator(
+          color: AppColors.accentColor,
+        ),
+      ),
+    );
+  }
+
+  Widget buildErrorView(String message) {
+    return SizedBox(
+      width: double.infinity,
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline,
+              color: AppColors.redAccent,
+              size: 48,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              style: AppTextStyles.bodyLarge,
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget buildSectionTitle(String title) {
+    return SizedBox(
+      width: double.infinity,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Text(
+          title,
+          style: AppTextStyles.headingSmall(),
+        ),
+      ),
+    );
+  }
+
+  Widget buildDivider() {
+    return Divider(
+      color: AppColors.accentColor.withOpacity(0.3),
+      height: 1,
+    );
+  }
+
+  Widget buildSpacer({double height = 16}) {
+    return SizedBox(height: height);
+  }
 
   @override
   void initState() {
     super.initState();
-
     appManager = Provider.of<AppManager>(context, listen: false);
     bannerAdModule = _moduleManager.getLatestModule<BannerAdModule>();
 
@@ -45,22 +307,26 @@ abstract class BaseScreenState<T extends BaseScreen> extends State<T> {
   @override
   Widget build(BuildContext context) {
     final navigationManager = Provider.of<NavigationManager>(context);
+    final appBar = widget.getAppBar(context) ?? AppBar(
+      title: Text(
+        widget.computeTitle(context),
+        style: AppTextStyles.headingMedium(color: AppColors.accentColor),
+      ),
+      backgroundColor: AppColors.primaryColor,
+      elevation: 0,
+      actions: widget.getAppBarActions(context),
+    );
 
     return Scaffold(
       backgroundColor: AppColors.scaffoldBackgroundColor,
-      appBar: AppBar(
-        title: Text(
-          widget.computeTitle(context),
-          style: AppTextStyles.headingMedium(color: AppColors.accentColor),
-        ),
-        backgroundColor: AppColors.primaryColor,
-        elevation: 0,
-      ),
-      drawer:  CustomDrawer(), // ✅ Use the correct drawer
+      appBar: appBar,
+      drawer: CustomDrawer(),
+      floatingActionButton: widget.getFloatingActionButton(context),
+      bottomNavigationBar: widget.getBottomNavigationBar(context),
 
       body: SafeArea(
         child: Container(
-          decoration: BoxDecoration(
+          decoration: widget.getBackground(context) ?? BoxDecoration(
             image: DecorationImage(
               image: AssetImage(AppBackgrounds.backgrounds[0]),
               fit: BoxFit.cover,
@@ -70,37 +336,46 @@ abstract class BaseScreenState<T extends BaseScreen> extends State<T> {
               ),
             ),
           ),
-          child: Padding(
-            padding: AppPadding.defaultPadding,
-            child: Column(
-              children: [
-                // Display top banner dynamically
-                if (bannerAdModule != null)
-                  Container(
-                    alignment: Alignment.center,
-                    child: bannerAdModule!.getBannerWidget(context, Config.admobsTopBanner),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: constraints.maxHeight,
                   ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (bannerAdModule != null)
+                        SizedBox(
+                          height: 50,
+                          child: Center(
+                            child: bannerAdModule!.getBannerWidget(context, Config.admobsTopBanner),
+                          ),
+                        ),
 
-                // The main content area that takes up all remaining space
-                Expanded(
-                  child: buildContent(context), // The content between top and bottom banners
+                      buildContent(context),
+
+                      if (bannerAdModule != null)
+                        SizedBox(
+                          height: 50,
+                          child: Center(
+                            child: bannerAdModule!.getBannerWidget(context, Config.admobsBottomBanner),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
-
-                // Display bottom banner dynamically
-                if (bannerAdModule != null)
-                  Container(
-                    alignment: Alignment.center,
-                    child: bannerAdModule!.getBannerWidget(context, Config.admobsBottomBanner),
-                  ),
-              ],
-            ),
+              );
+            },
           ),
         ),
       ),
     );
   }
 
-  /// Abstract method to be implemented in subclasses
+  /// Abstract method to be implemented by child classes
   Widget buildContent(BuildContext context);
 }
 
@@ -118,19 +393,19 @@ class BaseCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: margin ?? AppPadding.cardPadding,
-      color: AppColors.primaryColor.withOpacity(0.8),
-      elevation: 4,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: AppColors.accentColor.withOpacity(0.3),
-          width: 1,
+    return SizedBox(
+      width: double.infinity,
+      child: Card(
+        margin: EdgeInsets.zero,
+        color: AppColors.primaryColor.withOpacity(0.8),
+        elevation: 4,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(
+            color: AppColors.accentColor.withOpacity(0.3),
+            width: 1,
+          ),
         ),
-      ),
-      child: Padding(
-        padding: padding ?? AppPadding.cardPadding,
         child: child,
       ),
     );
@@ -162,7 +437,7 @@ class BaseButton extends StatelessWidget {
         style: ElevatedButton.styleFrom(
           backgroundColor: isPrimary ? AppColors.accentColor : AppColors.primaryColor,
           foregroundColor: AppColors.white,
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
             side: BorderSide(
@@ -173,14 +448,18 @@ class BaseButton extends StatelessWidget {
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             if (icon != null) ...[
               Icon(icon, size: 20),
               const SizedBox(width: 8),
             ],
-            Text(
-              text,
-              style: AppTextStyles.buttonText,
+            Flexible(
+              child: Text(
+                text,
+                style: AppTextStyles.buttonText,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ],
         ),
@@ -252,7 +531,7 @@ class BaseTextField extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
           borderSide: BorderSide(
             color: AppColors.accentColor,
-            width: 2,
+            width: 1,
           ),
         ),
         errorBorder: OutlineInputBorder(
@@ -266,9 +545,10 @@ class BaseTextField extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
           borderSide: BorderSide(
             color: AppColors.redAccent,
-            width: 2,
+            width: 1,
           ),
         ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       ),
     );
   }
