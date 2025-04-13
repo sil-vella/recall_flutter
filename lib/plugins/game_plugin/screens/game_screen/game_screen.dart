@@ -36,9 +36,6 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
   final TextEditingController _roomController = TextEditingController();
   final TextEditingController _logController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  
-  Completer<bool>? _roomCreationCompleter;
-  Completer<bool>? _roomJoinCompleter;
 
   @override
   void initState() {
@@ -394,15 +391,17 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
       return;
     }
     
-    _roomCreationCompleter = Completer<bool>();
-    _websocketModule!.createRoom(userId);
+    _logController.text += "🎮 Creating new game room...\n";
+    _scrollToBottom();
     
-    _roomCreationCompleter?.future.then((success) {
-      if (!success) {
-        _logController.text += "❌ Failed to create game room\n";
-        _scrollToBottom();
-      }
+    // Update state to show loading
+    stateManager.updatePluginState("game_room", <String, dynamic>{
+      "isLoading": true,
+      "error": null
     });
+    
+    // Emit create room event
+    _websocketModule!.createRoom(userId);
   }
 
   void _showJoinGameDialog() {
@@ -445,15 +444,19 @@ class _GameScreenState extends BaseScreenState<GameScreen> {
       return;
     }
 
-    _roomJoinCompleter = Completer<bool>();
-    _websocketModule!.joinRoom(roomId);
+    _logController.text += "🔗 Joining room: $roomId\n";
+    _scrollToBottom();
     
-    _roomJoinCompleter?.future.then((success) {
-      if (!success) {
-        _logController.text += "❌ Failed to join room: $roomId\n";
-        _scrollToBottom();
-      }
+    final stateManager = Provider.of<StateManager>(context, listen: false);
+    
+    // Update state to show loading
+    stateManager.updatePluginState("game_room", <String, dynamic>{
+      "isLoading": true,
+      "error": null
     });
+    
+    // Emit join room event
+    _websocketModule!.joinRoom(roomId);
   }
 
   void _leaveRoom() {
