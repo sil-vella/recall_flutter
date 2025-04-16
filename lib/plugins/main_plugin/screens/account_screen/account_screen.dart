@@ -110,21 +110,40 @@ class AccountScreenState extends BaseScreenState<AccountScreen> {
 
   /// ✅ Handle user logout
   Future<void> _logoutUser() async {
-    if (_sharedPref == null) return;
+    if (_sharedPref == null || _loginModule == null) return;
 
-    await _sharedPref!.setBool('is_logged_in', false);
-    await _sharedPref!.remove('username');
-    await _sharedPref!.remove('email');
+    try {
+      // Call backend logout endpoint
+      final response = await _loginModule!.logoutUser(context);
 
-    setState(() {
-      _isLoggedIn = false;
-      _username = null;
-      _email = null;
-    });
+      if (response.containsKey("message")) {
+        setState(() {
+          _isLoggedIn = false;
+          _username = null;
+          _email = null;
+          _user_id = null;
+        });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Logged out successfully.")),
-    );
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Logged out successfully.")),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(response["error"] ?? "Failed to logout."),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      logger.error("❌ Error during logout: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Failed to logout. Please try again."),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   /// ✅ Show confirmation dialog before deleting the account

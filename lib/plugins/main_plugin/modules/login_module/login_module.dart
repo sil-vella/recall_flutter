@@ -57,7 +57,7 @@ class LoginModule extends ModuleBase {
 
     return {
       "status": "logged_in",
-      "user_id": _sharedPref!.getInt('user_id'),
+      "user_id": _sharedPref!.getInt('user_id'),  // Get as integer
       "username": _sharedPref!.getString('username'),
       "email": _sharedPref!.getString('email'),
     };
@@ -128,6 +128,26 @@ class LoginModule extends ModuleBase {
         {"email": email, "password": password},
       );
 
+      // Handle error responses
+      if (response?["error"] != null) {
+        _log.error("❌ Login failed: ${response["error"]}");
+        
+        // Check for specific error cases
+        if (response["error"] == "Missing email or password") {
+          return {"error": "Please enter both email and password"};
+        } else if (response["error"] == "Invalid credentials") {
+          return {"error": "Invalid email or password"};
+        } else if (response["error"] == "User already logged in on another device") {
+          return {
+            "error": "You are already logged in on another device. Please log out there first.",
+            "user": response["user"]  // Include user data for UI display
+          };
+        } else {
+          return {"error": response["error"]};
+        }
+      }
+
+      // Handle successful login
       if (response?["message"] == "Login successful" && response?["user"]?["id"] != null) {
         final user = response!["user"];
         final tokens = response!["tokens"];
@@ -135,7 +155,7 @@ class LoginModule extends ModuleBase {
         // Store non-sensitive user data in SharedPrefs
         _sharedPref!.setString('email', email);
         _sharedPref!.setString('username', user["username"]);
-        _sharedPref!.setInt('user_id', user["id"]);
+        _sharedPref!.setInt('user_id', user["id"]);  // Store as integer
         _sharedPref!.setBool('is_logged_in', true);
 
         // Store sensitive tokens in secure storage
@@ -148,7 +168,7 @@ class LoginModule extends ModuleBase {
         final stateManager = Provider.of<StateManager>(context, listen: false);
         stateManager.updatePluginState("login", {
           "isLoggedIn": true,
-          "userId": user["id"],
+          "userId": user["id"],  // Store as integer
           "username": user["username"],
           "email": email,
           "error": null
@@ -156,7 +176,8 @@ class LoginModule extends ModuleBase {
 
         return {"success": "Login Successful!"};
       } else {
-        return {"error": response?["error"] ?? "Invalid email or password."};
+        _log.error("❌ Invalid response format: $response");
+        return {"error": "Invalid server response format"};
       }
     } catch (e) {
       _log.error("❌ Login error: $e");
@@ -172,7 +193,7 @@ class LoginModule extends ModuleBase {
       return {"error": "Service not available."};
     }
 
-    int? userId = _sharedPref!.getInt('user_id');
+    int? userId = _sharedPref!.getInt('user_id');  // Get as integer
     if (userId == null) {
       _log.error("❌ No user ID found. Cannot logout.");
       return {"error": "User not logged in or ID missing."};
@@ -182,7 +203,7 @@ class LoginModule extends ModuleBase {
       _log.info("⚡ Sending logout request...");
       final response = await _connectionModule!.sendPostRequest(
         "/logout",
-        {"user_id": userId},
+        {"user_id": userId},  // Send as integer
       );
 
       if (response?.containsKey('message') == true) {
@@ -207,13 +228,13 @@ class LoginModule extends ModuleBase {
           "error": null
         });
 
-        return {"success": "Logged out successfully!"};
+        return {"message": "Logged out successfully"};
       } else {
-        return {"error": response?["error"] ?? "Failed to logout."};
+        return {"error": response?["error"] ?? "Failed to logout"};
       }
     } catch (e) {
-      _log.error("❌ Logout error: $e");
-      return {"error": "Server error. Check network connection."};
+      _log.error("❌ Error during logout: $e");
+      return {"error": "Server error during logout"};
     }
   }
 
